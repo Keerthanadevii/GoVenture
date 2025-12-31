@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { CURRENCIES } from '../utils/currencies';
 import { useTheme, ThemeColors } from '../context/ThemeContext';
+import { ImageBackground } from 'react-native';
 
 export default function CreateTrip() {
   const router = useRouter();
@@ -61,19 +62,19 @@ export default function CreateTrip() {
     selectedCurrency.code !== 'USD';
 
   const interests = [
-    { id: 'Nature', label: 'Nature', icon: 'leaf' },
-    { id: 'Foodie', label: 'Foodie', icon: 'restaurant' },
-    { id: 'Culture', label: 'Culture', icon: 'library' },
-    { id: 'Nightlife', label: 'Nightlife', icon: 'wine' },
-    { id: 'Relaxing', label: 'Relaxing', icon: 'flower' },
-    { id: 'Shopping', label: 'Shopping', icon: 'bag-handle' },
+    { id: 'Nature', label: 'Nature', icon: 'leaf', color: '#DCFCE7' }, // Very light green
+    { id: 'Foodie', label: 'Foodie', icon: 'restaurant', color: '#FEF9C3' }, // Very light yellow/orange
+    { id: 'Culture', label: 'Culture', icon: 'library', color: '#E0E7FF' }, // Very light indigo
+    { id: 'Nightlife', label: 'Nightlife', icon: 'wine', color: '#F3E8FF' }, // Very light violet
+    { id: 'Relaxing', label: 'Relaxing', icon: 'flower', color: '#FCE7F3' }, // Very light pink
+    { id: 'Shopping', label: 'Shopping', icon: 'bag-handle', color: '#FEE2E2' }, // Very light red
   ];
 
   const parties = [
-    { id: 'Solo', icon: 'person', label: 'Solo' },
-    { id: 'Couple', icon: 'heart', label: 'Couple' },
-    { id: 'Family', icon: 'people', label: 'Family' },
-    { id: 'Friends', icon: 'beer', label: 'Friends' },
+    { id: 'Solo', icon: 'person', label: 'Solo', color: '#F3F4F6' }, // Very light gray
+    { id: 'Couple', icon: 'heart', label: 'Couple', color: '#FCE7F3' }, // Very light pink
+    { id: 'Family', icon: 'people', label: 'Family', color: '#F3E8FF' }, // Very light violet
+    { id: 'Friends', icon: 'people', label: 'Friends', color: '#DBEAFE' }, // Very light blue
   ];
 
   const transports = [
@@ -279,7 +280,13 @@ export default function CreateTrip() {
   const budgetDetails = getBudgetDetails();
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <ImageBackground
+      source={require('../../assets/images/scooty.jpg')}
+      style={styles.container}
+      resizeMode="cover"
+      blurRadius={3} // Blurs the background details
+    >
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.3)' }]} />
       <StatusBar barStyle={theme === 'dark' ? 'light-content' : 'dark-content'} />
 
       {/* Header */}
@@ -288,230 +295,258 @@ export default function CreateTrip() {
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>New Adventure</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <TouchableOpacity onPress={handleReset} disabled={!isDirty}>
-            <Text style={[styles.resetText, isDirty && [styles.resetTextActive, { color: colors.primary }]]}>Reset</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/profile')}>
-            <Ionicons name="person-circle" size={32} color={colors.primary} />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={handleReset} disabled={!isDirty}>
+          <Text style={[styles.resetText, isDirty && [styles.resetTextActive, { color: colors.primary }]]}>Reset</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Destination */}
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Where to?</Text>
-        <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.divider }]}>
-          <TextInput
-            value={destination}
-            onChangeText={setDestination}
-            placeholder="Search destination (e.g. Kyoto)"
-            style={[styles.input, { color: colors.text }]}
-            placeholderTextColor={colors.textSecondary}
-          />
-        </View>
 
-        {/* Dates */}
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>When?</Text>
-        <View style={styles.row}>
-          <TouchableOpacity
-            style={[styles.dateInput, { backgroundColor: colors.card, borderColor: colors.divider }]}
-            onPress={() => openCalendar('start')}
-          >
-            <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} style={{ marginRight: 8 }} />
-            <Text style={startDate ? [styles.dateText, { color: colors.text }] : [styles.placeholderText, { color: colors.textSecondary }]}>
-              {startDate || 'Start Date'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.dateInput, { backgroundColor: colors.card, borderColor: colors.divider }]}
-            onPress={() => openCalendar('end')}
-          >
-            <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} style={{ marginRight: 8 }} />
-            <Text style={endDate ? [styles.dateText, { color: colors.text }] : [styles.placeholderText, { color: colors.textSecondary }]}>
-              {endDate || 'End Date'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Interests */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Interests</Text>
-          <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Select all that apply</Text>
-        </View>
-        <View style={styles.chipContainer}>
-          {interests.map((item) => {
-            const isSelected = selectedInterests.includes(item.id);
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.chip, { backgroundColor: isSelected ? colors.primary : colors.card, borderColor: isSelected ? colors.primary : colors.divider }]}
-                onPress={() => toggleInterest(item.id)}
-              >
-                <Ionicons
-                  //@ts-ignore
-                  name={isActiveIcon(item.id, item.icon)}
-                  size={16}
-                  color={isSelected ? '#FFF' : colors.textSecondary}
-                  style={{ marginRight: 6 }}
-                />
-                <Text style={[styles.chipText, { color: isSelected ? '#FFF' : colors.textSecondary }]}>
-                  {item.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Who's Going */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Who's going?</Text>
-          <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Multiple allowed</Text>
-        </View>
-        <View style={styles.cardRow}>
-          {parties.map((item) => {
-            const isSelected = selectedParties.includes(item.id);
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.partyCard, { backgroundColor: isSelected ? (isDarkMode ? '#1E3A8A' : '#EFF6FF') : colors.card, borderColor: isSelected ? colors.primary : 'transparent' }]}
-                onPress={() => toggleParty(item.id)}
-              >
-                {isSelected && <View style={[styles.blueDot, { backgroundColor: colors.primary }]} />}
-                <Ionicons
-                  //@ts-ignore
-                  name={item.icon}
-                  size={24}
-                  color={isSelected ? colors.primary : colors.textSecondary}
-                  style={{ marginBottom: 4 }}
-                />
-                <Text style={[styles.partyLabel, { color: isSelected ? colors.primary : colors.textSecondary }]}>
-                  {item.label}
-                </Text>
-              </TouchableOpacity>
-            )
-          })}
-        </View>
-
-        {/* Budget */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Budget</Text>
-          <TouchableOpacity style={[styles.currencyButton, { backgroundColor: isDarkMode ? '#1E3A8A' : '#EFF6FF' }]} onPress={() => setShowCurrencyModal(true)}>
-            <Text style={[styles.currencyButtonText, { color: colors.primary }]}>{selectedCurrency.code} ({selectedCurrency.symbol})</Text>
-            <Ionicons name="chevron-down" size={12} color={colors.primary} style={{ marginLeft: 4 }} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.sliderContainer}>
-          <Slider
-            style={{ width: '100%', height: 40 }}
-            minimumValue={0}
-            maximumValue={2}
-            step={1}
-            value={budgetIndex}
-            onValueChange={setBudgetIndex}
-            minimumTrackTintColor={colors.divider}
-            maximumTrackTintColor={colors.divider}
-            thumbTintColor={colors.primary}
-          />
-          <View style={styles.sliderLabels}>
-            <Text style={styles.sliderLabelText}>Economy</Text>
-            <Text style={styles.sliderLabelText}>Moderate</Text>
-            <Text style={styles.sliderLabelText}>Luxury</Text>
-          </View>
-        </View>
-
-        <View style={[styles.costCard, { backgroundColor: colors.card }, isAiLoading && { opacity: 0.7 }]}>
-          <View style={[styles.costIconBg, { backgroundColor: isDarkMode ? '#064E3B' : '#ECFDF5' }]}>
-            <Text style={[styles.dollarSign, { color: isDarkMode ? '#34D399' : '#10B981' }]}>{selectedCurrency.symbol}</Text>
-          </View>
-          <View>
-            <Text style={[styles.estCostLabel, { color: colors.textSecondary }]}>{isAiLoading ? 'AI CALCULATING...' : 'EST. COST'}</Text>
-            <Text style={[styles.estCostSub, { color: colors.textSecondary, opacity: 0.6 }]}>per person</Text>
-          </View>
-          <View style={styles.costInputWrapper}>
+        {/* Card 1: Destination & Dates */}
+        <View style={styles.cardContainer}>
+          {/* Destination */}
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Where to?</Text>
+          <View style={[styles.searchContainer, { backgroundColor: '#F9FAFB', borderColor: 'transparent' }]}>
+            {/* Using slightly gray input bg inside white card */}
             <TextInput
-              style={[styles.costValueInput, { color: colors.text }]}
-              value={manualCost !== null ? manualCost : budgetDetails.cost.replace(selectedCurrency.symbol, '')}
-              onChangeText={setManualCost}
-              keyboardType="numeric"
-              placeholder="0.00"
+              value={destination}
+              onChangeText={setDestination}
+              placeholder="Search destination (e.g. Kyoto)"
+              style={[styles.input, { color: colors.text }]}
               placeholderTextColor={colors.textSecondary}
             />
+            <Ionicons name="mic-outline" size={20} color={colors.textSecondary} />
+          </View>
+
+          {/* Dates */}
+          <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 20 }]}>When?</Text>
+          <View style={styles.row}>
+            <TouchableOpacity
+              style={[styles.dateInput, { backgroundColor: '#F9FAFB', borderColor: 'transparent' }]}
+              onPress={() => openCalendar('start')}
+            >
+              <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} style={{ marginRight: 8 }} />
+              <Text style={startDate ? [styles.dateText, { color: colors.text }] : [styles.placeholderText, { color: colors.textSecondary }]}>
+                {startDate || 'Start Date'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.dateInput, { backgroundColor: '#F9FAFB', borderColor: 'transparent' }]}
+              onPress={() => openCalendar('end')}
+            >
+              <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} style={{ marginRight: 8 }} />
+              <Text style={endDate ? [styles.dateText, { color: colors.text }] : [styles.placeholderText, { color: colors.textSecondary }]}>
+                {endDate || 'End Date'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-
-        {/* Transport */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Best Mode of Travel</Text>
-          {isAiLoading ? (
-            <View style={styles.aiTag}>
-              <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={[styles.aiTagText, { color: colors.primary }]}>Finding best...</Text>
-            </View>
-          ) : (
-            <View style={styles.aiTag}>
-              <Ionicons name="sparkles" size={12} color={colors.primary} />
-              <Text style={[styles.aiTagText, { color: colors.primary }]}>AI Suggested</Text>
-            </View>
-          )}
-        </View>
-        <View style={styles.transportRow}>
-          {transports.map((item) => {
-            const isSelected = selectedTransport === item.id;
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.transportCard, { backgroundColor: isSelected ? (isDarkMode ? '#1E3A8A' : '#EFF6FF') : colors.card, borderColor: isSelected ? colors.primary : 'transparent' }]}
-                onPress={() => setSelectedTransport(item.id)}
-              >
-                {
-                  // @ts-ignore
-                  item.recommended && isSelected && (
-                    <View style={styles.bestTag}>
-                      <Text style={styles.bestTagText}>BEST</Text>
-                    </View>
-                  )
-                }
-                {isSelected && <View style={[styles.blueDot, { backgroundColor: colors.primary }]} />}
-                <Ionicons
+        {/* Card 2: Interests */}
+        <View style={styles.cardContainer}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Interests</Text>
+            <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Select all that apply</Text>
+          </View>
+          <View style={styles.chipContainer}>
+            {interests.map((item) => {
+              const isSelected = selectedInterests.includes(item.id);
+              return (
+                <TouchableOpacity
+                  key={item.id}
                   //@ts-ignore
-                  name={item.icon}
-                  size={24}
-                  color={isSelected ? colors.primary : colors.textSecondary}
-                  style={{ marginBottom: 8 }}
-                />
-                <Text style={[styles.transportLabel, { color: isSelected ? colors.primary : colors.text }]}>
-                  {item.label}
-                </Text>
-              </TouchableOpacity>
-            )
-          })}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: isSelected ? item.color : '#F3F4F6', // Light gray default
+                      borderColor: 'transparent',
+                      borderWidth: 1
+                    }
+                  ]}
+                  onPress={() => toggleInterest(item.id)}
+                >
+                  <Ionicons
+                    //@ts-ignore
+                    name={isActiveIcon(item.id, item.icon)}
+                    size={16}
+                    color={isSelected ? '#1F2937' : colors.textSecondary}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={[styles.chipText, { color: isSelected ? '#1F2937' : colors.textSecondary }]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
-        {/* Footer info */}
-        <View style={styles.aiFooter}>
-          <Ionicons name="sparkles" size={16} color={colors.primary} />
-          <Text style={[styles.aiFooterText, { color: colors.textSecondary }]}>AI is ready to plan your trip</Text>
+        {/* Card 3: Who's Going */}
+        <View style={styles.cardContainer}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Who's going?</Text>
+            <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Multiple allowed</Text>
+          </View>
+          <View style={styles.cardRow}>
+            {parties.map((item) => {
+              const isSelected = selectedParties.includes(item.id);
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[
+                    styles.partyCard,
+                    {
+                      backgroundColor: isSelected ? item.color : '#F3F4F6',
+                      borderColor: 'transparent',
+                      borderWidth: 2
+                    }
+                  ]}
+                  onPress={() => toggleParty(item.id)}
+                >
+                  {isSelected && <View style={[styles.blueDot, { backgroundColor: '#1F2937' }]} />}
+                  <Ionicons
+                    //@ts-ignore
+                    name={item.icon}
+                    size={24}
+                    color={isSelected ? '#1F2937' : colors.textSecondary}
+                    style={{ marginBottom: 4 }}
+                  />
+                  <Text style={[styles.partyLabel, { color: isSelected ? '#1F2937' : colors.textSecondary }]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
         </View>
 
-        {/* Submit Button */}
-        <TouchableOpacity
-          style={styles.createButton}
-          onPress={() => router.push('/trip/1')}
-        >
-          <Text style={styles.createButtonText}>Create My Trip</Text>
-          <Ionicons name="arrow-forward" size={20} color="#FFF" />
-        </TouchableOpacity>
+        {/* Card 4: Budget */}
+        <View style={styles.cardContainer}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Budget</Text>
+            <TouchableOpacity style={[styles.currencyButton, { backgroundColor: isDarkMode ? '#1E3A8A' : '#EFF6FF' }]} onPress={() => setShowCurrencyModal(true)}>
+              <Text style={[styles.currencyButtonText, { color: colors.primary }]}>{selectedCurrency.code} ({selectedCurrency.symbol})</Text>
+              <Ionicons name="chevron-down" size={12} color={colors.primary} style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
+          </View>
 
-        <View style={{ height: 40 }} />
+          <View style={styles.sliderContainer}>
+            <Slider
+              style={{ width: '100%', height: 40 }}
+              minimumValue={0}
+              maximumValue={2}
+              step={1}
+              value={budgetIndex}
+              onValueChange={setBudgetIndex}
+              minimumTrackTintColor={colors.divider}
+              maximumTrackTintColor={colors.divider}
+              thumbTintColor={colors.primary}
+            />
+            <View style={styles.sliderLabels}>
+              <Text style={styles.sliderLabelText}>Economy</Text>
+              <Text style={styles.sliderLabelText}>Moderate</Text>
+              <Text style={styles.sliderLabelText}>Luxury</Text>
+            </View>
+          </View>
+
+          <View style={[styles.costCard, { backgroundColor: '#F9FAFB' }, isAiLoading && { opacity: 0.7 }]}>
+            {/* Inner card style for cost */}
+            <View style={[styles.costIconBg, { backgroundColor: isDarkMode ? '#064E3B' : '#ECFDF5' }]}>
+              <Text style={[styles.dollarSign, { color: isDarkMode ? '#34D399' : '#10B981' }]}>{selectedCurrency.symbol}</Text>
+            </View>
+            <View>
+              <Text style={[styles.estCostLabel, { color: '#111827' }]}>{isAiLoading ? 'AI CALCULATING...' : 'EST. COST'}</Text>
+              <Text style={[styles.estCostSub, { color: '#374151', opacity: 1 }]}>per person</Text>
+            </View>
+            <View style={styles.costInputWrapper}>
+              <TextInput
+                style={[styles.costValueInput, { color: colors.text }]}
+                value={manualCost !== null ? manualCost : budgetDetails.cost.replace(selectedCurrency.symbol, '')}
+                onChangeText={setManualCost}
+                keyboardType="numeric"
+                placeholder="0.00"
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Card 5: Transport & Footer */}
+        <View style={[styles.cardContainer, { marginBottom: 100 }]}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Best Mode of Travel</Text>
+            {isAiLoading ? (
+              <View style={styles.aiTag}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={[styles.aiTagText, { color: colors.primary }]}>Finding best...</Text>
+              </View>
+            ) : (
+              <View style={styles.aiTag}>
+                <Ionicons name="sparkles" size={12} color={colors.primary} />
+                <Text style={[styles.aiTagText, { color: colors.primary }]}>AI Suggested</Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.transportRow}>
+            {transports.map((item) => {
+              const isSelected = selectedTransport === item.id;
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[
+                    styles.transportCard,
+                    {
+                      backgroundColor: isSelected ? '#EFF6FF' : '#F9FAFB',
+                      borderColor: isSelected ? colors.primary : 'transparent'
+                    }
+                  ]}
+                  onPress={() => setSelectedTransport(item.id)}
+                >
+                  {
+                    // @ts-ignore
+                    item.recommended && isSelected && (
+                      <View style={styles.bestTag}>
+                        <Text style={styles.bestTagText}>BEST</Text>
+                      </View>
+                    )
+                  }
+                  {isSelected && <View style={[styles.blueDot, { backgroundColor: colors.primary }]} />}
+                  <Ionicons
+                    //@ts-ignore
+                    name={item.icon}
+                    size={24}
+                    color={isSelected ? colors.primary : colors.textSecondary}
+                    style={{ marginBottom: 8 }}
+                  />
+                  <Text style={[styles.transportLabel, { color: isSelected ? colors.primary : colors.text }]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+
+          <View style={styles.aiFooter}>
+            <Ionicons name="sparkles" size={16} color={colors.primary} />
+            <Text style={[styles.aiFooterText, { color: colors.textSecondary }]}>AI is ready to plan your trip</Text>
+          </View>
+
+          {/* Submit Button Inside or Outside Card? Design implies outside usually, but let's keep it clean at bottom */}
+          <TouchableOpacity
+            style={[styles.createButton, { backgroundColor: '#8B5CF6' }]}
+            onPress={() => router.push('/trip/1')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.createButtonText}>Create My Trip</Text>
+            <Ionicons name="arrow-forward" size={20} color="#FFF" />
+          </TouchableOpacity>
+        </View>
 
       </ScrollView>
 
       {renderCalendar()}
       {renderCurrencyModal()}
-    </View>
+    </ImageBackground>
   );
 }
 
@@ -523,7 +558,20 @@ function isActiveIcon(id: string, icon: string) {
 
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F3F4F6' },
+  container: { flex: 1 }, // Background handled by Gradient
+  cardContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)', // More opaque for better readability
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#FFFFFF', // White border for glass edge
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -621,7 +669,7 @@ const styles = StyleSheet.create({
   budgetTagText: { color: '#3B82F6', fontSize: 12, fontWeight: '600' },
   sliderContainer: { marginBottom: 16 },
   sliderLabels: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 },
-  sliderLabelText: { fontSize: 12, color: '#9CA3AF' },
+  sliderLabelText: { fontSize: 12, color: '#111827', fontWeight: '600' },
 
   costCard: {
     backgroundColor: '#FFF',

@@ -32,11 +32,17 @@
           "resizeMode": "contain",
           "backgroundColor": "#F8F1E8"
         }
-      ]
+      ],
+      "expo-router"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "32c9881f-b761-4549-9dd8-05317ca8dc00"
+      }
     }
   }
 }
