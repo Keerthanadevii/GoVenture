@@ -1,9 +1,9 @@
-import { useRouter } from 'expo-router';
-import { Dimensions, ImageBackground, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import AuthService from '@/src/services/AuthService';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import MockAuthService from './services/AuthService';
+import { ActivityIndicator, Alert, Dimensions, ImageBackground, KeyboardAvoidingView, Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -28,15 +28,35 @@ export default function Signup() {
 
     setIsLoading(true);
     try {
-      const result = await MockAuthService.signUp(email, password);
+      await AuthService.register({
+        name,
+        email,
+        password,
+        password_confirmation: confirm,
+      });
 
-      if (result.success) {
-        router.replace('/create-trip');
-      } else {
-        Alert.alert('Account Exists', result.error || 'User already exists');
+      router.replace('/create-trip');
+    } catch (e: any) {
+      console.error('Signup Error:', e);
+      let errorMessage = 'Something went wrong. Please try again.';
+
+      if (e.response) {
+        console.error('Response Data:', e.response.data);
+
+        // Handle Laravel Validation Errors (422)
+        if (e.response.status === 422 && e.response.data.errors) {
+          const errors = e.response.data.errors;
+          // Get the first error message from the dictionary
+          const firstErrorKey = Object.keys(errors)[0];
+          errorMessage = errors[firstErrorKey][0];
+        } else {
+          errorMessage = e.response.data.message || errorMessage;
+        }
+      } else if (e.request) {
+        errorMessage = 'Cannot reach server. Please check your internet connection.';
       }
-    } catch (e) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+
+      Alert.alert('Registration Failed', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -128,16 +148,7 @@ export default function Signup() {
                 )}
               </TouchableOpacity>
 
-              <View style={styles.divider}>
-                <View style={styles.line} />
-                <Text style={styles.dividerText}>or continue with</Text>
-                <View style={styles.line} />
-              </View>
 
-              <TouchableOpacity style={styles.socialButton}>
-                <Ionicons name="logo-google" size={20} color="#FFF" />
-                <Text style={styles.socialButtonText}>Google</Text>
-              </TouchableOpacity>
 
               <TouchableOpacity onPress={() => router.replace('/login')} style={styles.footerLink}>
                 <Text style={styles.footerText}>

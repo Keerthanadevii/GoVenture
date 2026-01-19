@@ -1,17 +1,40 @@
-import { useRouter } from 'expo-router';
-import { Dimensions, ImageBackground, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import AuthService from '@/src/services/AuthService';
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import MockAuthService from './services/AuthService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Dimensions, ImageBackground, KeyboardAvoidingView, Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
 export default function Login() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  useEffect(() => {
+    if (params.email) {
+      setEmail(params.email as string);
+    } else {
+      loadSavedEmail();
+    }
+  }, [params.email]);
+
+  const loadSavedEmail = async () => {
+    try {
+      const savedEmail = await AsyncStorage.getItem('rememberedEmail');
+      if (savedEmail) {
+        setEmail(savedEmail);
+        setRememberMe(true);
+      }
+    } catch (error) {
+      console.log('Error loading saved email:', error);
+    }
+  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -21,14 +44,19 @@ export default function Login() {
 
     setIsLoading(true);
     try {
-      const result = await MockAuthService.login(email, password);
-      if (result.success) {
-        router.replace('/create-trip');
+      await AuthService.login({ email, password });
+
+      // Handle Remember Me
+      if (rememberMe) {
+        await AsyncStorage.setItem('rememberedEmail', email);
       } else {
-        Alert.alert('Login Failed', result.error || 'Account doesn\'t exist. Please sign up.');
+        await AsyncStorage.removeItem('rememberedEmail');
       }
-    } catch (e) {
-      Alert.alert('Error', 'Something went wrong');
+
+      router.replace('/create-trip');
+    } catch (e: any) {
+      const errorMsg = e.response?.data?.message || 'Account doesn\'t exist. Please sign up.';
+      Alert.alert('Login Failed', errorMsg);
     } finally {
       setIsLoading(false);
     }
@@ -92,11 +120,19 @@ export default function Login() {
                 />
 
                 <View style={styles.forgotContainer}>
-                  <TouchableOpacity>
-                    {/* Placeholder for checkbox logic if needed */}
-                    <Text style={styles.rememberText}>Remember me</Text>
+                  <TouchableOpacity
+                    style={styles.checkboxContainer}
+                    onPress={() => setRememberMe(!rememberMe)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name={rememberMe ? "checkbox" : "square-outline"}
+                      size={20}
+                      color={rememberMe ? "#3B82F6" : "#9CA3AF"}
+                    />
+                    <Text style={[styles.rememberText, rememberMe && styles.rememberTextActive]}>Remember me</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity>
+                  <TouchableOpacity onPress={() => router.push({ pathname: '/forgot-password', params: { email } })}>
                     <Text style={styles.forgotText}>Forgot Password?</Text>
                   </TouchableOpacity>
                 </View>
@@ -115,16 +151,7 @@ export default function Login() {
                 )}
               </TouchableOpacity>
 
-              <View style={styles.divider}>
-                <View style={styles.line} />
-                <Text style={styles.dividerText}>or continue with</Text>
-                <View style={styles.line} />
-              </View>
 
-              <TouchableOpacity style={styles.socialButton}>
-                <Ionicons name="logo-google" size={20} color="#FFF" />
-                <Text style={styles.socialButtonText}>Google</Text>
-              </TouchableOpacity>
 
               <TouchableOpacity onPress={() => router.replace('/signup')} style={styles.footerLink}>
                 <Text style={styles.footerText}>
@@ -226,6 +253,14 @@ const styles = StyleSheet.create({
   rememberText: {
     color: '#9CA3AF',
     fontSize: 13,
+  },
+  rememberTextActive: {
+    color: '#FFF',
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   forgotText: {
     color: '#3B82F6',

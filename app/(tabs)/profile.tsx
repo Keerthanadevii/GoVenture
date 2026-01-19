@@ -1,20 +1,20 @@
+import { ThemeColors, useTheme } from '@/src/context/ThemeContext';
+import AuthService from '@/src/services/AuthService';
 import { Ionicons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
 import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import {
+    Alert,
     Image,
     ScrollView,
     StatusBar,
     StyleSheet,
+    Switch,
     Text,
     TouchableOpacity,
-    View,
-    Switch,
-    Alert,
-    TextInput,
+    View
 } from 'react-native';
-import Slider from '@react-native-community/slider';
-import { useState } from 'react';
-import { useTheme, ThemeColors } from '../context/ThemeContext';
 
 export default function ProfileScreen() {
     const router = useRouter();
@@ -22,45 +22,91 @@ export default function ProfileScreen() {
     const colors = ThemeColors[theme];
 
     const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+    // Profile Data
+    const [name, setName] = useState('');
+    const [email, setEmail] = useState('');
+    const [tripsGenerated, setTripsGenerated] = useState(0);
+
+    // Travel DNA
     const [budgetRange, setBudgetRange] = useState(1); // 0=Economy, 1=Mid-Range, 2=Luxury
     const [pace, setPace] = useState('Balanced');
+    const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
 
-    const [isEditing, setIsEditing] = useState(false);
-    const [name, setName] = useState('Alex Voyager');
-    const [email, setEmail] = useState('alex.v@example.com');
-    const [tempName, setTempName] = useState(name);
-    const [tempEmail, setTempEmail] = useState(email);
+
+
+    useEffect(() => {
+        loadProfile();
+    }, []);
+
+    const loadProfile = async () => {
+        try {
+            const user = await AuthService.getUser();
+            if (user) {
+                setName(user.name);
+                setEmail(user.email);
+                setTripsGenerated(user.trips_generated || 0);
+                setBudgetRange(user.budget ?? 1);
+                setPace(user.pace || 'Balanced');
+                setSelectedInterests(user.interests || []);
+            }
+        } catch (error) {
+            console.error('Failed to load profile:', error);
+        }
+    };
 
     const handleLogout = () => {
         Alert.alert(
-            "Logout",
-            "Are you sure you want to log out of GoVenture?",
+            "Sign Out",
+            `You are currently signed in as ${name}. Are you sure you want to sign out?`,
             [
                 { text: "Cancel", style: "cancel" },
-                { text: "Logout", style: "destructive", onPress: () => router.push('/login') }
+                {
+                    text: "Sign Out",
+                    style: "destructive",
+                    onPress: async () => {
+                        await AuthService.logout();
+                        router.replace('/login');
+                    }
+                }
             ]
         );
     };
 
-    const handleSave = () => {
-        setName(tempName);
-        setEmail(tempEmail);
-        setIsEditing(false);
+
+
+    // Auto-save preferences when changed
+    const updatePreference = async (key: string, value: any) => {
+        try {
+            await AuthService.updateProfile({ [key]: value });
+        } catch (error) {
+            console.error(`Failed to update ${key}:`, error);
+        }
     };
 
-    const handleCancel = () => {
-        setTempName(name);
-        setTempEmail(email);
-        setIsEditing(false);
+    const handleBudgetChange = (value: number) => {
+        setBudgetRange(value);
+        // Debouncing would be better here, but for simplicity we save on end
     };
 
-    const interests = ['Foodie', 'Nature', 'History', 'Nightlife', 'Art'];
-    const [selectedInterests, setSelectedInterests] = useState(['Foodie', 'Nature']);
+    const handleBudgetComplete = (value: number) => {
+        updatePreference('budget', value);
+    };
+
+    const handlePaceChange = (newPace: string) => {
+        setPace(newPace);
+        updatePreference('pace', newPace);
+    };
+
+    const interests = ['Nature', 'Foodie', 'Culture', 'Nightlife', 'Relaxing', 'Shopping'];
 
     const toggleInterest = (interest: string) => {
-        setSelectedInterests(prev =>
-            prev.includes(interest) ? prev.filter(i => i !== interest) : [...prev, interest]
-        );
+        const newInterests = selectedInterests.includes(interest)
+            ? selectedInterests.filter(i => i !== interest)
+            : [...selectedInterests, interest];
+
+        setSelectedInterests(newInterests);
+        updatePreference('interests', newInterests);
     };
 
     const budgetLabels = ['Economy', 'Mid-Range ($$)', 'Luxury'];
@@ -85,50 +131,15 @@ export default function ProfileScreen() {
                             source={{ uri: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=300&auto=format&fit=crop' }}
                             style={[styles.avatar, { borderColor: colors.card }]}
                         />
-                        <TouchableOpacity
-                            style={[styles.editAvatarBtn, { backgroundColor: colors.primary }]}
-                            onPress={() => setIsEditing(true)}
-                        >
-                            <Ionicons name="pencil" size={16} color="#FFF" />
-                        </TouchableOpacity>
+
                     </View>
 
-                    {isEditing ? (
-                        <View style={styles.editForm}>
-                            <TextInput
-                                style={[styles.input, { color: colors.text, borderColor: colors.divider }]}
-                                value={tempName}
-                                onChangeText={setTempName}
-                                placeholder="Name"
-                                placeholderTextColor={colors.textSecondary}
-                            />
-                            <TextInput
-                                style={[styles.input, { color: colors.text, borderColor: colors.divider }]}
-                                value={tempEmail}
-                                onChangeText={setTempEmail}
-                                placeholder="Email"
-                                keyboardType="email-address"
-                                placeholderTextColor={colors.textSecondary}
-                            />
-                            <View style={styles.editActions}>
-                                <TouchableOpacity style={[styles.saveBtn, { backgroundColor: colors.primary }]} onPress={handleSave}>
-                                    <Text style={styles.actionBtnText}>Save</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={[styles.cancelBtn, { borderColor: colors.divider }]} onPress={handleCancel}>
-                                    <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    ) : (
-                        <>
-                            <Text style={[styles.userName, { color: colors.text }]}>{name}</Text>
-                            <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{email}</Text>
-                            <TouchableOpacity style={[styles.tripsTag, { backgroundColor: isDarkMode ? '#1E3A8A' : '#EBF5FF' }]}>
-                                <Ionicons name="boat-outline" size={14} color={colors.primary} />
-                                <Text style={[styles.tripsTagText, { color: colors.primary }]}>12 Trips Generated</Text>
-                            </TouchableOpacity>
-                        </>
-                    )}
+                    <Text style={[styles.userName, { color: colors.text }]}>{name}</Text>
+                    <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{email}</Text>
+                    <TouchableOpacity style={[styles.tripsTag, { backgroundColor: isDarkMode ? '#1E3A8A' : '#EBF5FF' }]}>
+                        <Ionicons name="boat-outline" size={14} color={colors.primary} />
+                        <Text style={[styles.tripsTagText, { color: colors.primary }]}>{tripsGenerated} Trips Generated</Text>
+                    </TouchableOpacity>
                 </View>
 
                 {/* Travel DNA */}
@@ -151,7 +162,8 @@ export default function ProfileScreen() {
                             maximumValue={2}
                             step={1}
                             value={budgetRange}
-                            onValueChange={setBudgetRange}
+                            onValueChange={handleBudgetChange}
+                            onSlidingComplete={handleBudgetComplete}
                             minimumTrackTintColor={colors.primary}
                             maximumTrackTintColor={colors.divider}
                             thumbTintColor={colors.primary}
@@ -173,7 +185,7 @@ export default function ProfileScreen() {
                                         { backgroundColor: isDarkMode ? '#374151' : '#F3F4F6' },
                                         pace === item && { backgroundColor: colors.primary }
                                     ]}
-                                    onPress={() => setPace(item)}
+                                    onPress={() => handlePaceChange(item)}
                                 >
                                     <Text style={[
                                         styles.paceBtnText,
@@ -402,32 +414,6 @@ const styles = StyleSheet.create({
     },
     settingLabel: { flex: 1, fontSize: 16, fontWeight: '500' },
     settingValue: { fontSize: 14 },
-    divider: { height: 1 },
+    divider: { height: 1, backgroundColor: '#E5E7EB' },
     versionText: { textAlign: 'center', color: '#9CA3AF', fontSize: 12, marginTop: 20, marginBottom: 30 },
-    editForm: { width: '100%', paddingHorizontal: 20, marginTop: 10, alignItems: 'center' },
-    input: {
-        width: '100%',
-        height: 50,
-        borderWidth: 1,
-        borderRadius: 12,
-        paddingHorizontal: 15,
-        marginBottom: 12,
-        fontSize: 16,
-    },
-    editActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
-    saveBtn: {
-        paddingHorizontal: 24,
-        paddingVertical: 10,
-        borderRadius: 10,
-        justifyContent: 'center',
-    },
-    cancelBtn: {
-        paddingHorizontal: 24,
-        paddingVertical: 10,
-        borderRadius: 10,
-        borderWidth: 1,
-        justifyContent: 'center',
-    },
-    actionBtnText: { color: '#FFF', fontWeight: '700', fontSize: 14 },
-    cancelBtnText: { fontWeight: '600', fontSize: 14 },
 });

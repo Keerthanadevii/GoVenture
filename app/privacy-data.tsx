@@ -1,22 +1,25 @@
+import { ThemeColors, useTheme } from '@/src/context/ThemeContext';
+import AuthService from '@/src/services/AuthService';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+    Alert,
+    Modal,
+    Pressable,
     ScrollView,
     StatusBar,
     StyleSheet,
+    Switch,
     Text,
     TouchableOpacity,
-    View,
-    Switch,
-    Modal,
-    Pressable,
+    View
 } from 'react-native';
-import { useTheme, ThemeColors } from './context/ThemeContext';
 
 export default function PrivacyData() {
     const router = useRouter();
-    const { theme, isDarkMode, toggleTheme } = useTheme();
+    const { theme } = useTheme();
     const colors = ThemeColors[theme];
 
     const [trainAI, setTrainAI] = useState(true);
@@ -24,8 +27,120 @@ export default function PrivacyData() {
     const [shareStats, setShareStats] = useState(false);
     const [profileVisibility, setProfileVisibility] = useState('Friends Only');
     const [isVisibilityModalVisible, setIsVisibilityModalVisible] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Cookie Preferences
+    const [isCookieModalVisible, setIsCookieModalVisible] = useState(false);
+    const [cookies, setCookies] = useState({
+        functional: true,
+        analytics: true,
+        marketing: false
+    });
+
+
 
     const visibilityOptions = ['Public', 'Friends Only', 'Private'];
+
+    useEffect(() => {
+        const loadSettings = async () => {
+            setIsLoading(true);
+            try {
+                const user = await AuthService.getUser();
+                if (user) {
+                    setTrainAI(user.train_ai ?? true);
+                    setSmartSuggestions(user.smart_suggestions ?? true);
+                    setShareStats(user.share_stats ?? false);
+                    setProfileVisibility(user.profile_visibility || 'Friends Only');
+                    setCookies({
+                        functional: true,
+                        analytics: user.analytics_cookies ?? true,
+                        marketing: user.marketing_cookies ?? false
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load privacy settings:', error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        loadSettings();
+    }, []);
+
+    const updatePrivacySetting = async (key: string, value: any) => {
+        try {
+            await AuthService.updateProfile({ [key]: value });
+        } catch (error) {
+            console.error(`Failed to update ${key}:`, error);
+            Alert.alert("Error", "Could not save your preference. Please check your connection.");
+            // Optionally revert state if needed, but for simplicity we'll just alert
+        }
+    };
+
+    const handleTrainToggle = (value: boolean) => {
+        setTrainAI(value);
+        updatePrivacySetting('train_ai', value);
+    };
+
+    const handleSuggestionsToggle = (value: boolean) => {
+        setSmartSuggestions(value);
+        updatePrivacySetting('smart_suggestions', value);
+    };
+
+    const handleStatsToggle = (value: boolean) => {
+        setShareStats(value);
+        updatePrivacySetting('share_stats', value);
+    };
+
+    const handleVisibilitySelect = (option: string) => {
+        setProfileVisibility(option);
+        setIsVisibilityModalVisible(false);
+        updatePrivacySetting('profile_visibility', option);
+    };
+
+
+
+    const toggleCookie = (type: keyof typeof cookies) => {
+        setCookies(prev => ({ ...prev, [type]: !prev[type] }));
+    };
+
+    const saveCookies = async () => {
+        try {
+            await AuthService.updateProfile({
+                analytics_cookies: cookies.analytics,
+                marketing_cookies: cookies.marketing
+            });
+            setIsCookieModalVisible(false);
+            Alert.alert("Preferences Saved", "Your cookie and tracking preferences have been synced with your account.");
+        } catch (error) {
+            console.error('Failed to save cookies:', error);
+            Alert.alert("Error", "Could not save preferences. Please check your connection.");
+        }
+    };
+
+    const handleDeleteAccount = () => {
+        Alert.alert(
+            "Delete Account?",
+            "This will permanently delete your profile, Travel DNA, and all linked accounts. This action cannot be undone.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete Everything",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            await AuthService.deleteAccount();
+                            await AsyncStorage.clear();
+                            Alert.alert("Account Deleted", "Your data has been permanently removed.");
+                            router.replace('/'); // Redirect to onboarding/index
+                        } catch (error) {
+                            console.error('Failed to delete account:', error);
+                            Alert.alert("Error", "Could not delete account. Please try again later.");
+                        }
+                    }
+                }
+            ]
+        );
+    };
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -57,7 +172,7 @@ export default function PrivacyData() {
                         </View>
                         <Switch
                             value={trainAI}
-                            onValueChange={setTrainAI}
+                            onValueChange={handleTrainToggle}
                             trackColor={{ false: '#D1D5DB', true: '#3B82F6' }}
                             thumbColor="#FFF"
                         />
@@ -72,7 +187,7 @@ export default function PrivacyData() {
                         </View>
                         <Switch
                             value={smartSuggestions}
-                            onValueChange={setSmartSuggestions}
+                            onValueChange={handleSuggestionsToggle}
                             trackColor={{ false: '#D1D5DB', true: '#3B82F6' }}
                             thumbColor="#FFF"
                         />
@@ -102,44 +217,18 @@ export default function PrivacyData() {
                         </View>
                         <Switch
                             value={shareStats}
-                            onValueChange={setShareStats}
+                            onValueChange={handleStatsToggle}
                             trackColor={{ false: '#D1D5DB', true: '#3B82F6' }}
                             thumbColor="#FFF"
                         />
                     </View>
                 </View>
 
-                {/* App Preferences */}
-                <Text style={styles.sectionTitle}>APP PREFERENCES</Text>
-                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <View style={styles.settingRow}>
-                        <View style={styles.settingInfo}>
-                            <Text style={[styles.settingName, { color: colors.text }]}>Dark Mode</Text>
-                            <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
-                                Enable dark theme for the application.
-                            </Text>
-                        </View>
-                        <Switch
-                            value={isDarkMode}
-                            onValueChange={toggleTheme}
-                            trackColor={{ false: '#D1D5DB', true: '#3B82F6' }}
-                            thumbColor="#FFF"
-                        />
-                    </View>
-                </View>
 
                 {/* Your Data */}
                 <Text style={styles.sectionTitle}>YOUR DATA</Text>
                 <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <TouchableOpacity style={styles.actionItem}>
-                        <View style={[styles.iconBg, { backgroundColor: colors.aiBanner }]}>
-                            <Ionicons name="download-outline" size={20} color={colors.primary} />
-                        </View>
-                        <Text style={[styles.actionLabel, { color: colors.text }]}>Download My Data</Text>
-                        <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-                    </TouchableOpacity>
-                    <View style={[styles.divider, { backgroundColor: colors.divider }]} />
-                    <TouchableOpacity style={styles.actionItem}>
+                    <TouchableOpacity style={styles.actionItem} onPress={() => setIsCookieModalVisible(true)}>
                         <View style={[styles.iconBg, { backgroundColor: colors.divider }]}>
                             <Ionicons name="browsers-outline" size={20} color={colors.textSecondary} />
                         </View>
@@ -147,7 +236,10 @@ export default function PrivacyData() {
                         <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
                     </TouchableOpacity>
                     <View style={[styles.divider, { backgroundColor: colors.divider }]} />
-                    <TouchableOpacity style={styles.actionItem}>
+                    <TouchableOpacity
+                        style={styles.actionItem}
+                        onPress={() => router.push('/privacy-policy')}
+                    >
                         <View style={[styles.iconBg, { backgroundColor: colors.divider }]}>
                             <Ionicons name="shield-checkmark-outline" size={20} color={colors.textSecondary} />
                         </View>
@@ -158,7 +250,10 @@ export default function PrivacyData() {
 
                 {/* Danger Zone */}
                 <Text style={[styles.sectionTitle, { color: '#EF4444' }]}>DANGER ZONE</Text>
-                <TouchableOpacity style={[styles.dangerCard, { backgroundColor: colors.card, borderColor: colors.dangerBorder }]}>
+                <TouchableOpacity
+                    style={[styles.dangerCard, { backgroundColor: colors.card, borderColor: colors.dangerBorder }]}
+                    onPress={handleDeleteAccount}
+                >
                     <View style={[styles.dangerIconBg, { backgroundColor: colors.dangerBg }]}>
                         <Ionicons name="trash-outline" size={20} color={colors.danger} />
                     </View>
@@ -188,10 +283,7 @@ export default function PrivacyData() {
                             <TouchableOpacity
                                 key={option}
                                 style={[styles.optionItem, { borderBottomColor: colors.divider }]}
-                                onPress={() => {
-                                    setProfileVisibility(option);
-                                    setIsVisibilityModalVisible(false);
-                                }}
+                                onPress={() => handleVisibilitySelect(option)}
                             >
                                 <Text style={[
                                     styles.optionText,
@@ -208,6 +300,68 @@ export default function PrivacyData() {
                     </View>
                 </Pressable>
             </Modal>
+
+            {/* Cookie Preferences Modal */}
+            <Modal
+                visible={isCookieModalVisible}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setIsCookieModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.card, width: '90%' }]}>
+                        <Text style={[styles.modalTitle, { color: colors.text }]}>Cookie Preferences</Text>
+                        <Text style={[styles.modalSubtitle, { marginBottom: 20 }]}>
+                            TravelAI uses data to improve your experience. Select which types you allow.
+                        </Text>
+
+                        <View style={styles.cookieItem}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.cookieName, { color: colors.text }]}>Functional (Required)</Text>
+                                <Text style={styles.cookieDesc}>Necessary for the app to function securely.</Text>
+                            </View>
+                            <Switch value={cookies.functional} disabled={true} trackColor={{ false: '#D1D5DB', true: colors.primary }} />
+                        </View>
+
+                        <View style={[styles.divider, { backgroundColor: colors.divider, marginVertical: 12 }]} />
+
+                        <View style={styles.cookieItem}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.cookieName, { color: colors.text }]}>Analytics</Text>
+                                <Text style={styles.cookieDesc}>Helps us understand how you use the app.</Text>
+                            </View>
+                            <Switch
+                                value={cookies.analytics}
+                                onValueChange={() => toggleCookie('analytics')}
+                                trackColor={{ false: '#D1D5DB', true: colors.primary }}
+                            />
+                        </View>
+
+                        <View style={[styles.divider, { backgroundColor: colors.divider, marginVertical: 12 }]} />
+
+                        <View style={styles.cookieItem}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.cookieName, { color: colors.text }]}>Marketing</Text>
+                                <Text style={styles.cookieDesc}>Used to show you personalized travel deals.</Text>
+                            </View>
+                            <Switch
+                                value={cookies.marketing}
+                                onValueChange={() => toggleCookie('marketing')}
+                                trackColor={{ false: '#D1D5DB', true: colors.primary }}
+                            />
+                        </View>
+
+                        <TouchableOpacity
+                            style={[styles.saveCookieBtn, { backgroundColor: colors.primary }]}
+                            onPress={saveCookies}
+                        >
+                            <Text style={styles.saveCookieText}>Save Preferences</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+
         </View>
     );
 }
@@ -314,4 +468,21 @@ const styles = StyleSheet.create({
         color: '#3B82F6',
         fontWeight: '600',
     },
+    modalSubtitle: { fontSize: 14, color: '#64748B', marginBottom: 20 },
+    cookieItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 8,
+    },
+    cookieName: { fontSize: 16, fontWeight: '600' },
+    cookieDesc: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
+    saveCookieBtn: {
+        height: 50,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 24,
+    },
+    saveCookieText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
 });

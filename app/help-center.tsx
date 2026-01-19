@@ -10,7 +10,7 @@ import {
     TextInput,
     Share,
 } from 'react-native';
-import { useTheme, ThemeColors } from './context/ThemeContext';
+import { useTheme, ThemeColors } from '@/src/context/ThemeContext';
 
 export default function HelpCenter() {
     const router = useRouter();

@@ -10,7 +10,7 @@ import {
     Dimensions,
 } from 'react-native';
 import { useState } from 'react';
-import { useTheme, ThemeColors } from '../../context/ThemeContext';
+import { useTheme, ThemeColors } from '@/src/context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 

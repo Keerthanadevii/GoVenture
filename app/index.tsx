@@ -6,22 +6,27 @@ export default function SplashScreen() {
   const router = useRouter();
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      // TODO: Check if user is logged in
-      const isLoggedIn = false;
-      if (isLoggedIn) {
-        router.replace('/(tabs)/explore');
-      } else {
-        router.replace('/onboarding');
-      }
-    }, 2000); // 2 second delay
+    const checkSession = async () => {
+      // Forcing flow to Onboarding as requested by user ("order the flow")
+      // const token = await AuthService.getToken();
+      // if (token) {
+      //   router.replace('/(tabs)');
+      // } else {
+      router.replace('/onboarding');
+      // }
+    };
 
+    const timer = setTimeout(checkSession, 1500); // Keep splash briefly
     return () => clearTimeout(timer);
   }, []);
 
   return (
     <View style={styles.container}>
-      <Image source={require('@/assets/images/splash.png')} style={styles.logo} resizeMode="contain" />
+      <Image
+        source={require('@/assets/images/splash.png')}
+        style={styles.logo}
+        resizeMode="contain"
+      />
     </View>
   );
 }

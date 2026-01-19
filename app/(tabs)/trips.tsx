@@ -1,7 +1,7 @@
+import { ThemeColors, useTheme } from '@/src/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Dimensions, FlatList, Image, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useTheme, ThemeColors } from '../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 

@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
 import {
     Image,
     ScrollView,
@@ -12,7 +13,7 @@ import {
     Dimensions,
     Share,
 } from 'react-native';
-import { useTheme, ThemeColors } from '../../context/ThemeContext';
+import { useTheme, ThemeColors } from '@/src/context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
@@ -20,6 +21,7 @@ const COLUMN_WIDTH = (width - 60) / 2;
 
 export default function MemoryVault() {
     const router = useRouter();
+    const { folderName } = useLocalSearchParams();
     const { theme, isDarkMode } = useTheme();
     const colors = ThemeColors[theme];
     const insets = useSafeAreaInsets();
@@ -34,8 +36,57 @@ export default function MemoryVault() {
         }
     };
 
-    const categories = ['All', 'Favorites', 'Food', 'Scenery'];
-    const [activeCategory, setActiveCategory] = useState('All');
+    const [permission, requestPermission] = ImagePicker.useCameraPermissions();
+
+    // 1. Camera Handler (FAB)
+    const handleLaunchCamera = async () => {
+        if (!permission?.granted) {
+            const permissionResult = await requestPermission();
+            if (!permissionResult.granted) {
+                alert("Permission to access camera is required!");
+                return;
+            }
+        }
+
+        let result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 1,
+        });
+
+        if (!result.canceled) {
+            console.log(result.assets[0].uri);
+            alert('Photo captured! (Integration pending backend)');
+        }
+    };
+
+    // 2. Gallery Handler (New Collection)
+    const handleLaunchGallery = async () => {
+        let result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 1,
+        });
+
+        if (!result.canceled) {
+            console.log(result.assets[0].uri);
+            alert('Images selected from Gallery!');
+        }
+    };
+
+    // 3. Dynamic Categories
+    const baseCategories = ['All', 'Favorites', 'Food', 'Scenery'];
+    const [categories, setCategories] = useState(baseCategories);
+
+    // Initialize active category and update list if needed
+    const initialCategory = (folderName && String(folderName) !== 'undefined') ? String(folderName) : 'All';
+    const [activeCategory, setActiveCategory] = useState(initialCategory);
+
+    if (initialCategory !== 'All' && !baseCategories.includes(initialCategory) && !categories.includes(initialCategory)) {
+        setCategories([...baseCategories, initialCategory]);
+    }
 
     const memories = [
         {
@@ -100,7 +151,7 @@ export default function MemoryVault() {
                     <Ionicons name="arrow-back" size={24} color={colors.text} />
                 </TouchableOpacity>
                 <View style={styles.headerTitleContainer}>
-                    <Text style={[styles.headerTitle, { color: colors.text }]}>Kyoto Spring 2024</Text>
+                    <Text style={[styles.headerTitle, { color: colors.text }]}>{folderName ? String(folderName) : 'Kyoto Spring 2024'}</Text>
                     <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>Apr 10 - Apr 24</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -134,11 +185,16 @@ export default function MemoryVault() {
                     {/* Left Column */}
                     <View style={styles.column}>
                         {/* New Collection Card */}
-                        <TouchableOpacity style={[styles.newCollectionCard, { backgroundColor: isDarkMode ? '#1E3A8A' : '#EFF6FF', borderColor: colors.primary }]}>
+                        {/* New Collection Card - Gallery access */}
+                        <TouchableOpacity
+                            style={[styles.newCollectionCard, { backgroundColor: isDarkMode ? '#1E3A8A' : '#EFF6FF', borderColor: colors.primary, height: 180 }]}
+                            onPress={handleLaunchGallery}
+                        >
                             <View style={[styles.folderIconBg, { backgroundColor: isDarkMode ? '#172554' : '#DBEAFE' }]}>
-                                <Ionicons name="folder-open" size={24} color={colors.primary} />
+                                <Ionicons name="images-outline" size={24} color={colors.primary} />
                             </View>
                             <Text style={[styles.newCollectionText, { color: colors.primary }]}>New Collection</Text>
+                            <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 4 }}>(From Gallery)</Text>
                         </TouchableOpacity>
 
                         {/* Memory Items */}
@@ -198,6 +254,7 @@ export default function MemoryVault() {
             <TouchableOpacity
                 style={[styles.fab, { bottom: Math.max(insets.bottom, 20) + 10 }]}
                 activeOpacity={0.9}
+                onPress={handleLaunchCamera}
             >
                 <Ionicons name="camera" size={24} color="#FFF" />
                 <Text style={styles.fabText}>Add Memory</Text>

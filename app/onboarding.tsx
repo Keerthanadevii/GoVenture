@@ -1,3 +1,9 @@
+import {
+  moderateScale,
+  SCREEN_HEIGHT,
+  SCREEN_WIDTH,
+  verticalScale,
+} from '@/src/utils/responsive';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -13,12 +19,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  moderateScale,
-  SCREEN_HEIGHT,
-  SCREEN_WIDTH,
-  verticalScale,
-} from './utils/responsive';
 
 /* CARD SIZE */
 const CARD_MARGIN = moderateScale(16);
@@ -43,7 +43,19 @@ export default function OnboardingScreen() {
 
   const scrollStartX = useRef(0);
 
-  /* 🔁 AUTOPLAY */
+  /* �️ AUTH CHECK */
+  /* Auth check disabled */
+  // useEffect(() => {
+  //   const checkSession = async () => {
+  //     const token = await AuthService.getToken();
+  //     if (token) {
+  //       router.replace('/(tabs)');
+  //     }
+  //   };
+  //   checkSession();
+  // }, []);
+
+  /* �🔁 AUTOPLAY */
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
 

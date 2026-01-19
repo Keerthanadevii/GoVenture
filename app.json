@@ -18,7 +18,8 @@
       },
       "edgeToEdgeEnabled": false,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.GoVenture"
+      "package": "com.anonymous.GoVenture",
+      "usesCleartextTraffic": true
     },
     "web": {
       "output": "static",

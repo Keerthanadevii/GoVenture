@@ -15,7 +15,7 @@ import {
     Pressable,
 } from 'react-native';
 import { useState } from 'react';
-import { useTheme, ThemeColors } from '../../context/ThemeContext';
+import { useTheme, ThemeColors } from '@/src/context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');

@@ -10,9 +10,12 @@ import {
     View,
     Dimensions,
     Switch,
+    Modal,
+    TextInput,
+    Alert,
 } from 'react-native';
 import { useState } from 'react';
-import { useTheme, ThemeColors } from '../../context/ThemeContext';
+import { useTheme, ThemeColors } from '@/src/context/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');
@@ -41,15 +44,46 @@ export default function TripDashboard() {
         setSquad(prev => prev.filter(member => member.id !== id));
     };
 
+    // Folder Management State
+    const [modalVisible, setModalVisible] = useState(false);
+    const [folderName, setFolderName] = useState('');
+    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
     const handleAddFolder = () => {
-        const newFolder = {
-            name: 'New Memories',
-            count: 0,
-            image: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=400',
-            icon: 'folder'
-        };
-        //@ts-ignore
-        setFolders(prev => [...prev, newFolder]);
+        setFolderName('');
+        setEditingIndex(null);
+        setModalVisible(true);
+    };
+
+    const handleEditFolder = (index: number) => {
+        setFolderName(folders[index].name);
+        setEditingIndex(index);
+        setModalVisible(true);
+    };
+
+    const handleSaveFolder = () => {
+        if (!folderName.trim()) {
+            Alert.alert('Error', 'Please enter a folder name');
+            return;
+        }
+
+        if (editingIndex !== null) {
+            // Rename existing
+            const updatedFolders = [...folders];
+            updatedFolders[editingIndex].name = folderName;
+            setFolders(updatedFolders);
+        } else {
+            // Create new
+            const newFolder = {
+                name: folderName,
+                count: 0,
+                image: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=400', // Default image
+                icon: 'folder'
+            };
+            //@ts-ignore
+            setFolders(prev => [...prev, newFolder]);
+        }
+        setModalVisible(false);
     };
 
     return (
@@ -243,13 +277,23 @@ export default function TripDashboard() {
                         <TouchableOpacity
                             key={idx}
                             style={[styles.vaultCard, { backgroundColor: colors.card }]}
-                            onPress={() => router.push(`/trip/${id}/memory-vault`)}
+                            onPress={() => router.push({ pathname: '/trip/[id]/memory-vault', params: { id: id as string, folderName: folder.name } })}
                         >
                             <Image source={{ uri: folder.image }} style={styles.vaultImage} />
                             <LinearGradient
                                 colors={['transparent', 'rgba(0,0,0,0.7)']}
                                 style={styles.vaultGradient}
                             />
+                            {/* Edit Menu Button */}
+                            <TouchableOpacity
+                                style={styles.editFolderBtn}
+                                onPress={(e) => {
+                                    e.stopPropagation(); // Prevent navigating when clicking edit
+                                    handleEditFolder(idx);
+                                }}
+                            >
+                                <Ionicons name="ellipsis-horizontal" size={20} color="#FFF" />
+                            </TouchableOpacity>
                             <View style={styles.vaultInfo}>
                                 <View style={styles.vaultTitleRow}>
                                     <Ionicons name={folder.icon as any} size={14} color="#FFF" />
@@ -280,7 +324,38 @@ export default function TripDashboard() {
                     <Text style={styles.startGuideText}>Start Guide</Text>
                 </TouchableOpacity>
             </View>
-        </View>
+            {/* Folder Modal */}
+            <Modal
+                visible={modalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+                        <Text style={[styles.modalTitle, { color: colors.text }]}>
+                            {editingIndex !== null ? 'Rename Folder' : 'New Folder'}
+                        </Text>
+                        <TextInput
+                            style={[styles.input, { color: colors.text, borderColor: colors.divider, backgroundColor: colors.background }]}
+                            placeholder="Folder Name"
+                            placeholderTextColor={colors.textSecondary}
+                            value={folderName}
+                            onChangeText={setFolderName}
+                            autoFocus
+                        />
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalBtn}>
+                                <Text style={[styles.modalBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={handleSaveFolder} style={[styles.modalBtn, { backgroundColor: colors.primary }]}>
+                                <Text style={[styles.modalBtnText, { color: '#FFF' }]}>Save</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+        </View >
     );
 }
 
@@ -401,6 +476,18 @@ const styles = StyleSheet.create({
     vaultCard: { width: (width - 52) / 2, height: 140, borderRadius: 16, overflow: 'hidden', position: 'relative' },
     vaultImage: { width: '100%', height: '100%' },
     vaultGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 60 },
+    editFolderBtn: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: 'rgba(0,0,0,0.3)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
+    },
     vaultInfo: { position: 'absolute', bottom: 12, left: 12 },
     vaultTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     vaultTitle: { color: '#FFF', fontSize: 14, fontWeight: '700' },
@@ -442,5 +529,49 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.2,
         shadowRadius: 5,
         elevation: 3,
+    },
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalContent: {
+        width: '100%',
+        borderRadius: 16,
+        padding: 24,
+        alignItems: 'center',
+        elevation: 5,
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        marginBottom: 20,
+    },
+    input: {
+        width: '100%',
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        marginBottom: 20,
+        fontSize: 16,
+    },
+    modalButtons: {
+        flexDirection: 'row',
+        gap: 12,
+        width: '100%',
+    },
+    modalBtn: {
+        flex: 1,
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    modalBtnText: {
+        fontWeight: '600',
+        fontSize: 16,
     },
 });

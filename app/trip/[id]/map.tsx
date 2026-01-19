@@ -9,7 +9,7 @@ import {
     View,
     Dimensions,
 } from 'react-native';
-import { useTheme, ThemeColors } from '../../context/ThemeContext';
+import { useTheme, ThemeColors } from '@/src/context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width, height } = Dimensions.get('window');

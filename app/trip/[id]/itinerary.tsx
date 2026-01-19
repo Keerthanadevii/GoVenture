@@ -13,8 +13,8 @@ import {
     TextInput,
     Share,
 } from 'react-native';
-import PagerView from 'react-native-pager-view';
-import { useTheme, ThemeColors } from '../../context/ThemeContext';
+import PagerView, { PagerViewType } from '@/components/common/PagerView';
+import { useTheme, ThemeColors } from '@/src/context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
@@ -22,7 +22,7 @@ const { width } = Dimensions.get('window');
 export default function DayItinerary() {
     const router = useRouter();
     const { id, initialDay } = useLocalSearchParams();
-    const pagerRef = useRef<PagerView>(null);
+    const pagerRef = useRef<PagerViewType>(null);
     const { theme, isDarkMode } = useTheme();
     const colors = ThemeColors[theme];
     const insets = useSafeAreaInsets();
