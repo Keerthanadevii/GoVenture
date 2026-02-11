@@ -22,6 +22,7 @@ interface User {
   email: string;
   trips_generated?: number;
   budget?: number; // 0=Economy, 1=Mid, 2=Luxury
+  currency_code?: string;
   pace?: string;
   interests?: string[];
   auto_sync_data?: boolean;

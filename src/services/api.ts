@@ -6,11 +6,11 @@ import axios from 'axios';
 // const LAN_IP = '192.168.29.13'; 
 
 // Centralized API URL
-export const API_URL = 'http://10.125.144.164:8000/api';
+export const API_URL = 'http://192.168.29.14:8000/api';
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
@@ -37,13 +37,23 @@ export const setAuthToken = async (token: string | null) => {
 };
 
 // Initialize token from storage on app start
-AsyncStorage.getItem('userInfo').then(data => {
-  if (data) {
-    const { token } = JSON.parse(data);
-    if (token) {
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+const initializeToken = async () => {
+  try {
+    const data = await AsyncStorage.getItem('userInfo');
+    if (data) {
+      const { token } = JSON.parse(data);
+      if (token) {
+        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
     }
+  } catch (error) {
+    console.warn('Failed to initialize auth token from storage:', error);
   }
-});
+};
+
+// Only run on client-side
+if (typeof window !== 'undefined') {
+  initializeToken();
+}
 
 export default api;

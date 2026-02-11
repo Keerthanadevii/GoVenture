@@ -1,12 +1,13 @@
 import { ThemeColors, useTheme } from '@/src/context/ThemeContext';
+import { useUser } from '@/src/context/UserContext';
 import AuthService from '@/src/services/AuthService';
+import api from '@/src/services/api';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
     Alert,
-    Image,
     ScrollView,
     StatusBar,
     StyleSheet,
@@ -19,6 +20,7 @@ import {
 export default function ProfileScreen() {
     const router = useRouter();
     const { theme, toggleTheme, isDarkMode } = useTheme();
+    const { user, updateUserCurrency, updateUserPreference } = useUser();
     const colors = ThemeColors[theme];
 
     const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -33,26 +35,47 @@ export default function ProfileScreen() {
     const [pace, setPace] = useState('Balanced');
     const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
 
+    // Currency
+    const [availableCurrencies, setAvailableCurrencies] = useState<any[]>([]);
+    const [selectedCurrencyCode, setSelectedCurrencyCode] = useState('USD');
+
 
 
     useEffect(() => {
         loadProfile();
+        fetchCurrencies();
     }, []);
 
-    const loadProfile = async () => {
-        try {
-            const user = await AuthService.getUser();
-            if (user) {
-                setName(user.name);
-                setEmail(user.email);
-                setTripsGenerated(user.trips_generated || 0);
-                setBudgetRange(user.budget ?? 1);
-                setPace(user.pace || 'Balanced');
-                setSelectedInterests(user.interests || []);
-            }
-        } catch (error) {
-            console.error('Failed to load profile:', error);
+    useEffect(() => {
+        if (user) {
+            setName(user.name);
+            setEmail(user.email);
+            setTripsGenerated(user.trips_generated || 0);
+            setBudgetRange(user.budget ?? 1);
+            setPace(user.pace || 'Balanced');
+            setSelectedInterests(user.interests || []);
+            setSelectedCurrencyCode(user.currency_code || 'USD');
         }
+    }, [user]);
+
+    const fetchCurrencies = async () => {
+        try {
+            const res = await api.get('/currencies');
+            // Convert symbols object to array
+            const list = Object.entries(res.data).map(([code, name]) => ({
+                code,
+                name: String(name),
+                symbol: code === 'USD' ? '$' : (code === 'INR' ? '₹' : (code === 'EUR' ? '€' : (code === 'GBP' ? '£' : '')))
+            }));
+            setAvailableCurrencies(list);
+        } catch (error) {
+            console.error('Failed to fetch currencies:', error);
+            setAvailableCurrencies([{ code: 'USD', name: 'US Dollar', symbol: '$' }, { code: 'INR', name: 'Indian Rupee', symbol: '₹' }]);
+        }
+    };
+
+    const loadProfile = async () => {
+        // user is loaded via UserContext, but if we need manual refresh:
     };
 
     const handleLogout = () => {
@@ -95,7 +118,12 @@ export default function ProfileScreen() {
 
     const handlePaceChange = (newPace: string) => {
         setPace(newPace);
-        updatePreference('pace', newPace);
+        updateUserPreference('pace', newPace);
+    };
+
+    const handleCurrencyChange = (code: string) => {
+        setSelectedCurrencyCode(code);
+        updateUserCurrency(code);
     };
 
     const interests = ['Nature', 'Foodie', 'Culture', 'Nightlife', 'Relaxing', 'Shopping'];
@@ -127,11 +155,16 @@ export default function ProfileScreen() {
                 {/* User Info */}
                 <View style={styles.profileInfo}>
                     <View style={styles.avatarContainer}>
-                        <Image
-                            source={{ uri: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=300&auto=format&fit=crop' }}
-                            style={[styles.avatar, { borderColor: colors.card }]}
-                        />
-
+                        <View style={[styles.avatar, {
+                            borderColor: colors.card,
+                            backgroundColor: colors.primary,
+                            justifyContent: 'center',
+                            alignItems: 'center'
+                        }]}>
+                            <Text style={styles.avatarText}>
+                                {name ? name.charAt(0).toUpperCase() : '?'}
+                            </Text>
+                        </View>
                     </View>
 
                     <Text style={[styles.userName, { color: colors.text }]}>{name}</Text>
@@ -263,6 +296,30 @@ export default function ProfileScreen() {
                         <Text style={[styles.settingLabel, { color: colors.text }]}>Dark Mode</Text>
                         <Text style={[styles.settingValue, { color: colors.primary }]}>{isDarkMode ? 'On' : 'Off'}</Text>
                     </TouchableOpacity>
+                    <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+                    <View style={styles.settingItem}>
+                        <View style={[styles.settingIconBg, { backgroundColor: '#F0F9FF', justifyContent: 'center', alignItems: 'center' }]}>
+                            <Ionicons name="cash-outline" size={20} color="#0EA5E9" />
+                        </View>
+                        <Text style={[styles.settingLabel, { color: colors.text }]}>Default Currency</Text>
+                        <View style={styles.currencyPicker}>
+                            {['USD', 'INR', 'EUR'].map((c) => (
+                                <TouchableOpacity
+                                    key={c}
+                                    onPress={() => handleCurrencyChange(c)}
+                                    style={[
+                                        styles.currencySmallBtn,
+                                        selectedCurrencyCode === c && { backgroundColor: colors.primary }
+                                    ]}
+                                >
+                                    <Text style={[
+                                        styles.currencySmallBtnText,
+                                        selectedCurrencyCode === c && { color: '#FFF' }
+                                    ]}>{c}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    </View>
                 </View>
 
                 {/* Support */}
@@ -277,7 +334,6 @@ export default function ProfileScreen() {
                     </TouchableOpacity>
                 </View>
 
-                <Text style={[styles.versionText, { color: colors.textSecondary }]}>TravelAI v1.0.2 • Build 8420</Text>
                 <View style={{ height: 100 }} />
             </ScrollView>
         </View>
@@ -300,6 +356,7 @@ const styles = StyleSheet.create({
     profileInfo: { alignItems: 'center', marginBottom: 30 },
     avatarContainer: { position: 'relative', marginBottom: 16 },
     avatar: { width: 120, height: 120, borderRadius: 60, borderWidth: 4, borderColor: '#FFF' },
+    avatarText: { fontSize: 48, fontWeight: '800', color: '#FFF' },
     editAvatarBtn: {
         position: 'absolute',
         bottom: 5,
@@ -415,5 +472,12 @@ const styles = StyleSheet.create({
     settingLabel: { flex: 1, fontSize: 16, fontWeight: '500' },
     settingValue: { fontSize: 14 },
     divider: { height: 1, backgroundColor: '#E5E7EB' },
-    versionText: { textAlign: 'center', color: '#9CA3AF', fontSize: 12, marginTop: 20, marginBottom: 30 },
+    currencyPicker: { flexDirection: 'row', gap: 6 },
+    currencySmallBtn: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        backgroundColor: '#F3F4F6',
+    },
+    currencySmallBtnText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
 });

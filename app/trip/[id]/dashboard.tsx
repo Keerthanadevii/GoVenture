@@ -1,22 +1,28 @@
+import { Toast } from '@/src/components/Toast';
+import { ThemeColors, useTheme } from '@/src/context/ThemeContext';
+import api from '@/src/services/api';
+import { getIconName } from '@/src/utils/icons';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Print from 'expo-print';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import {
+    ActivityIndicator,
+    Alert,
+    Dimensions,
     Image,
+    Modal,
     ScrollView,
+    Share,
     StatusBar,
     StyleSheet,
     Text,
-    TouchableOpacity,
-    View,
-    Dimensions,
-    Switch,
-    Modal,
     TextInput,
-    Alert,
+    TouchableOpacity,
+    View
 } from 'react-native';
-import { useState } from 'react';
-import { useTheme, ThemeColors } from '@/src/context/ThemeContext';
-import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');
 
@@ -25,66 +31,376 @@ export default function TripDashboard() {
     const { id } = useLocalSearchParams();
     const { theme, isDarkMode } = useTheme();
     const colors = ThemeColors[theme];
-    const [isCollaborative, setIsCollaborative] = useState(false);
     const [showAIInsights, setShowAIInsights] = useState(true);
+    const [trip, setTrip] = useState<any>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [connectError, setConnectError] = useState(false);
+    const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as const });
+    const [isDateModalVisible, setIsDateModalVisible] = useState(false);
+    const [isShareModalVisible, setIsShareModalVisible] = useState(false);
+    const [isSavingDates, setIsSavingDates] = useState(false);
+    const [tempStartDate, setTempStartDate] = useState<string | null>(null);
+    const [tempEndDate, setTempEndDate] = useState<string | null>(null);
 
-    const [folders, setFolders] = useState([
-        { name: 'Food', count: 12, image: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?q=80&w=400', icon: 'restaurant' },
-        { name: 'Scenery', count: 48, image: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=400', icon: 'image' },
-        { name: 'Tickets', count: 3, image: 'https://images.unsplash.com/photo-1544731612-de7f96afe55f?q=80&w=400', icon: 'ticket' },
-    ]);
+    // RBAC & Content state
+    const [myRole, setMyRole] = useState<string | null>(null);
+    const [folders, setFolders] = useState<any[]>([]);
+    const [modalVisible, setModalVisible] = useState(false);
+    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+    const [folderName, setFolderName] = useState('');
 
-    const [squad, setSquad] = useState([
-        { id: 1, name: 'You', image: 'https://i.pravatar.cc/150?u=you' },
-        { id: 2, name: 'Mike', image: 'https://i.pravatar.cc/150?u=mike' },
-        { id: 3, name: 'Sarah', image: 'https://i.pravatar.cc/150?u=sarah' },
-    ]);
-
-    const handleRemoveMember = (id: number) => {
-        setSquad(prev => prev.filter(member => member.id !== id));
+    // Share Handlers
+    const handleShare = () => {
+        setIsShareModalVisible(true);
     };
 
-    // Folder Management State
-    const [modalVisible, setModalVisible] = useState(false);
-    const [folderName, setFolderName] = useState('');
-    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+    const handleShareLink = async () => {
+        setIsShareModalVisible(false);
+        try {
+            const tripLink = `https://goventure.app/trips/${id}`;
+            await Share.share({
+                message: `Check out my trip to ${trip?.destination}! 🌍\nFrom ${trip?.start_date} to ${trip?.end_date}.\nView full itinerary here:\n${tripLink}`,
+                url: tripLink,
+                title: trip?.title || 'My Trip'
+            });
+        } catch (error: any) {
+            Alert.alert(error.message);
+        }
+    };
+
+    const handleSharePDF = async () => {
+        setIsShareModalVisible(false);
+        const blueprint = trip?.itinerary_data;
+        if (!blueprint) {
+            Alert.alert("Error", "No itinerary data available to export.");
+            return;
+        }
+
+        try {
+            // Generate HTML for PDF (Reusing logic from blueprint.tsx)
+            const dailyBreakdownHtml = blueprint.daily_breakdown?.map((day: any) => `
+                <div style="margin-bottom: 20px; page-break-inside: avoid;">
+                    <h3 style="color: #3B82F6; margin-bottom: 8px;">Day ${day.day}: ${day.title || 'Activities'}</h3>
+                    <p style="color: #6B7280; font-size: 14px; margin-bottom: 12px;">${day.desc || ''}</p>
+                    ${day.activities?.map((act: any) => `
+                        <div style="margin-left: 16px; margin-bottom: 8px; padding: 12px; background: #F9FAFB; border-radius: 8px; border-left: 4px solid #3B82F6;">
+                            <div style="display: flex; justify-content: space-between;">
+                                <strong>${act.time || ''}</strong>
+                                ${act.cost ? `<span style="color: #10B981; font-size: 11px; font-weight: bold;">${act.cost}</span>` : ''}
+                            </div>
+                            <div style="margin-top: 4px; font-weight: bold;">${act.title || 'Activity'}</div>
+                            <p style="color: #6B7280; font-size: 12px; margin: 4px 0 0 0;">${act.desc || ''}</p>
+                        </div>
+                    `).join('') || ''}
+                </div>
+            `).join('') || '';
+
+            const staysHtml = blueprint.suggested_stays?.slice(0, 3).map((stay: any) => `
+                <div style="margin-bottom: 8px; padding: 8px; background: #F0F9FF; border-radius: 8px;">
+                    <strong>${stay.name}</strong> - ${stay.area || 'Location'}
+                    <span style="color: #3B82F6; margin-left: 8px;">★ ${stay.rating || 'N/A'}</span>
+                </div>
+            `).join('') || '';
+
+            const html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>${trip?.title || 'Trip Plan'}</title>
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 32px; color: #1F2937; line-height: 1.5; }
+                        .header { text-align: center; margin-bottom: 40px; }
+                        h1 { color: #3B82F6; font-size: 28px; margin-bottom: 8px; }
+                        .dates { color: #6B7280; font-size: 14px; margin-bottom: 24px; }
+                        .highlight { background: #EBF5FF; padding: 20px; border-radius: 12px; margin-bottom: 32px; border: 1px solid #BFDBFE; }
+                        .section { margin-bottom: 32px; }
+                        h2 { font-size: 20px; border-bottom: 2px solid #E5E7EB; padding-bottom: 8px; margin-bottom: 16px; }
+                        .footer { margin-top: 60px; text-align: center; color: #9CA3AF; font-size: 12px; border-top: 1px solid #E5E7EB; padding-top: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1>🌍 ${trip?.title || 'Trip Plan'}</h1>
+                        <div class="dates">${trip?.start_date} - ${trip?.end_date} | ${trip?.destination}</div>
+                    </div>
+                    
+                    <div class="highlight">
+                        <strong style="color: #3B82F6;">AI Overview:</strong><br/>
+                        ${blueprint.highlights || 'An amazing trip awaits!'}
+                    </div>
+
+                    <div class="section">
+                        <h2>📅 Daily Itinerary</h2>
+                        ${dailyBreakdownHtml || '<p>No itinerary data available.</p>'}
+                    </div>
+
+                    ${staysHtml ? `
+                    <div class="section">
+                        <h2>🏨 Stay Recommendations</h2>
+                        ${staysHtml}
+                    </div>` : ''}
+
+                    <div class="footer">
+                        <p>Generated by <strong>GoVenture</strong> • Your AI Travel Companion</p>
+                        <p>https://goventure.app</p>
+                    </div>
+                </body>
+                </html>
+            `;
+
+            const { uri } = await Print.printToFileAsync({ html });
+
+            // Try to use printAsync for a cleaner "Save as PDF" experience on mobile
+            await Print.printAsync({ html });
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch (error: any) {
+            console.error('PDF Error:', error);
+            Alert.alert('Download Failed', 'Failed to generate itinerary. Please try again.');
+        }
+    };
+
+    const handleOffline = () => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        handleSharePDF();
+    };
+
+    const fetchTripData = async () => {
+        try {
+            const res = await api.get(`/trips/${id}`);
+            setTrip(res.data);
+
+            const vaultRes = await api.get(`/trips/${id}/memories?dashboard=true`);
+            const loadedFolders = vaultRes.data?.folders || [];
+
+            // Only show user-created folders on Dashboard
+            setFolders(loadedFolders);
+            setMyRole(res.data.my_role);
+
+        } catch (err: any) {
+            console.error('[Dashboard] Fetch data error details:', {
+                message: err.message,
+                status: err.response?.status,
+                data: err.response?.data,
+                url: err.config?.url,
+                tripId: id
+            });
+            console.error('Fetch dashboard data error:', err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useFocusEffect(
+        useCallback(() => {
+            if (id) fetchTripData();
+        }, [id])
+    );
+
+
+    const handleShiftDates = (days: number) => {
+        if (!trip?.start_date || !trip?.end_date) return;
+
+        const shift = (dateStr: string) => {
+            const d = new Date(dateStr);
+            d.setDate(d.getDate() + days);
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+        };
+
+        const newStart = shift(tempStartDate || trip.start_date);
+        const newEnd = shift(tempEndDate || trip.end_date);
+        setTempStartDate(newStart);
+        setTempEndDate(newEnd);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    };
+
+    const handleUpdateDates = async () => {
+        if (!tempStartDate || !tempEndDate) {
+            setIsDateModalVisible(false);
+            return;
+        }
+
+        setIsSavingDates(true);
+        try {
+            await api.put(`/trips/${id}`, {
+                start_date: tempStartDate,
+                end_date: tempEndDate
+            });
+            setTrip((prev: any) => ({ ...prev, start_date: tempStartDate, end_date: tempEndDate }));
+            setIsDateModalVisible(false);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Alert.alert("Success", "Trip dates updated! ✨");
+        } catch (error) {
+            console.error('Error updating dates:', error);
+            Alert.alert("Error", "Failed to update trip dates.");
+        } finally {
+            setIsSavingDates(false);
+            setTempStartDate(null);
+            setTempEndDate(null);
+        }
+    };
+
 
     const handleAddFolder = () => {
-        setFolderName('');
         setEditingIndex(null);
+        setFolderName('');
         setModalVisible(true);
     };
 
     const handleEditFolder = (index: number) => {
-        setFolderName(folders[index].name);
         setEditingIndex(index);
+        setFolderName(folders[index].name);
         setModalVisible(true);
     };
 
-    const handleSaveFolder = () => {
-        if (!folderName.trim()) {
-            Alert.alert('Error', 'Please enter a folder name');
-            return;
-        }
+    const handleSaveFolder = async () => {
+        if (!folderName.trim()) return;
 
-        if (editingIndex !== null) {
-            // Rename existing
-            const updatedFolders = [...folders];
-            updatedFolders[editingIndex].name = folderName;
-            setFolders(updatedFolders);
-        } else {
-            // Create new
-            const newFolder = {
-                name: folderName,
-                count: 0,
-                image: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=400', // Default image
-                icon: 'folder'
-            };
-            //@ts-ignore
-            setFolders(prev => [...prev, newFolder]);
+        try {
+            if (editingIndex !== null) {
+                // Update
+                const folderId = folders[editingIndex].id;
+                const res = await api.put(`/trips/${id}/folders/${folderId}`, { name: folderName });
+                const updated = [...folders];
+                updated[editingIndex] = { ...updated[editingIndex], ...res.data.folder };
+                setFolders(updated);
+            } else {
+                // Create
+                const res = await api.post(`/trips/${id}/folders`, { name: folderName });
+                setFolders(prev => [...prev, { ...res.data.folder, count: 0 }]);
+            }
+            setModalVisible(false);
+            setFolderName('');
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch (err) {
+            console.error(err);
+            Alert.alert("Error", "Failed to save folder");
         }
-        setModalVisible(false);
     };
+
+    const handleDeleteFolder = async () => {
+        if (editingIndex === null) return;
+        const folder = folders[editingIndex];
+
+        Alert.alert(
+            "Delete Folder",
+            `Are you sure you want to delete "${folder.name}"? This will not delete the memories inside, they will move to "All".`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            await api.delete(`/trips/${id}/folders/${folder.id}`);
+                            setFolders(prev => prev.filter((_, i) => i !== editingIndex));
+                            setModalVisible(false);
+                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        } catch (err) {
+                            console.error(err);
+                            Alert.alert("Error", "Failed to delete folder");
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+
+    // --- SMART ITINERARY LOGIC ---
+    // In a real app, this would come from Geolocation.watchPosition()
+    const [mockLocationState, setMockLocationState] = useState<'at_event_1' | 'moving' | 'at_event_2'>('at_event_1');
+
+    const blueprint = trip?.itinerary_data;
+    const dailyActivities = blueprint?.daily_breakdown?.[0]?.activities || [];
+
+    // We assume the first two activities for this demo
+    const event1 = dailyActivities[0];
+    const event2 = dailyActivities[1];
+
+    let currentActivity = event1;
+    let nextActivity = event2;
+    let statusLabel = null;
+    let statusColor = colors.textSecondary;
+    let showAlert = false;
+    let alertMessage = "";
+
+    // "Smart" Logic
+    if (mockLocationState === 'at_event_1') {
+        // User is still at Event 1
+        currentActivity = event1;
+        // Check if "late" (Mocking time check: assume it's past start time of Event 2)
+        const isLate = true; // Hardcoded for demo
+        if (isLate && event2) {
+            statusLabel = `Still at ${event1?.title || 'Location'}`;
+            statusColor = '#F59E0B'; // Amber
+
+            // Show Event 2 as "Upcoming" with alert
+            showAlert = true;
+            const travelDuration = event2?.transport?.duration || (event2 as any)?.transport_duration || "15 min";
+            alertMessage = `Scheduled to start now • ${travelDuration} travel`;
+        }
+    } else if (mockLocationState === 'moving') {
+        // User left Event 1, moving to Event 2
+        // Event 2 becomes "Current" target
+        currentActivity = event2 || event1;
+        statusLabel = "En route";
+        statusColor = '#3B82F6'; // Blue
+    } else if (mockLocationState === 'at_event_2') {
+        // Arrived at Event 2
+        currentActivity = event2 || event1;
+        statusLabel = "You are here";
+        statusColor = '#10B981'; // Green
+    }
+
+    const configMockLocation = () => {
+        Alert.alert(
+            "Debug: Location Simulation",
+            `Current State: ${mockLocationState}\n\nLong press the 'Up Next' card or this icon to simulate moving to the next location.`,
+            [{ text: "OK" }]
+        );
+    };
+
+    const handleSimulateMovement = () => {
+        if (mockLocationState === 'at_event_1') {
+            setMockLocationState('moving');
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Alert.alert("GPS Update", "Detected movement towards next location. updating itinerary...");
+        } else if (mockLocationState === 'moving') {
+            setMockLocationState('at_event_2');
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Alert.alert("GPS Update", "You have arrived at the destination.");
+        } else {
+            setMockLocationState('at_event_1'); // Reset
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
+    };
+
+    const handleReschedule = () => {
+        Alert.alert(
+            "Reschedule Itinerary",
+            "Since you are staying longer at the current location, would you like to push subsequent events by 30 mins?",
+            [
+                { text: "No", style: "cancel" },
+                {
+                    text: "Yes, Reschedule",
+                    onPress: () => {
+                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        Alert.alert("Itinerary Updated", "Events pushed forward by 30 mins.");
+                    }
+                }
+            ]
+        );
+    };
+
+    if (isLoading) {
+        return (
+            <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+        );
+    }
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -109,6 +425,14 @@ export default function TripDashboard() {
                         <Text style={styles.headerTitle}>Trip Details</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                             <TouchableOpacity
+                                onPress={() => configMockLocation()}
+                                onLongPress={handleSimulateMovement} // Hidden implementation for demo
+                                delayLongPress={1000}
+                                style={[styles.profileBtn, { backgroundColor: 'rgba(255,255,255,0.2)', padding: 2, borderRadius: 20 }]}
+                            >
+                                <Ionicons name="location-outline" size={20} color="#FFF" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
                                 onPress={() => router.push('/profile')}
                                 style={[styles.profileBtn, { backgroundColor: 'rgba(255,255,255,0.2)', padding: 2, borderRadius: 20 }]}
                             >
@@ -118,10 +442,10 @@ export default function TripDashboard() {
                     </View>
 
                     <View style={styles.heroInfo}>
-                        <Text style={styles.tripTitle}>Tokyo Tech Tour</Text>
+                        <Text style={styles.tripTitle}>{trip?.title || 'Trip Details'}</Text>
                         <View style={styles.dateRow}>
-                            <Ionicons name="calendar-outline" size={16} color="#FFF" />
-                            <Text style={styles.tripDates}>Oct 12 - Oct 20, 2024</Text>
+                            <View style={{ width: 4 }} />
+                            <Text style={styles.tripDates}>{trip?.start_date} - {trip?.end_date}</Text>
                         </View>
                     </View>
                 </View>
@@ -134,19 +458,15 @@ export default function TripDashboard() {
                         </View>
                         <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Blueprint</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionItem} onPress={() => router.push('/create-trip')}>
-                        <View style={[styles.actionIconBg, { backgroundColor: colors.card }]}>
-                            <Ionicons name="calendar-outline" size={20} color={colors.primary} />
-                        </View>
-                        <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Dates</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionItem}>
+
+                    <TouchableOpacity style={styles.actionItem} onPress={handleOffline}>
                         <View style={[styles.actionIconBg, { backgroundColor: colors.card }]}>
                             <Ionicons name="download-outline" size={20} color={colors.primary} />
                         </View>
                         <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Offline</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionItem}>
+
+                    <TouchableOpacity style={styles.actionItem} onPress={handleShare}>
                         <View style={[styles.actionIconBg, { backgroundColor: colors.card }]}>
                             <Ionicons name="share-social-outline" size={20} color={colors.primary} />
                         </View>
@@ -170,98 +490,115 @@ export default function TripDashboard() {
                         </View>
 
                         <View style={styles.aiInsightItem}>
-                            <Ionicons name="cloud-outline" size={18} color={isDarkMode ? '#3B82F6' : '#2563EB'} style={styles.insightIcon} />
+                            <Ionicons name="bulb-outline" size={18} color={isDarkMode ? '#3B82F6' : '#2563EB'} style={styles.insightIcon} />
                             <Text style={[styles.aiText, { color: isDarkMode ? '#BFDBFE' : '#1E40AF' }]}>
-                                Heavy rain predicted tomorrow afternoon. Consider swapping the outdoor garden walk with the indoor Digital Art Museum?
+                                {blueprint?.highlights || "Your AI-powered itinerary is ready. Explore the best of Coimbatore with a balanced mix of nature, culture, and food."}
                             </Text>
                         </View>
 
-                        <View style={styles.aiInsightItem}>
-                            <Ionicons name="calendar-outline" size={18} color={isDarkMode ? '#3B82F6' : '#2563EB'} style={styles.insightIcon} />
-                            <View style={{ flex: 1 }}>
-                                <Text style={[styles.aiText, { color: isDarkMode ? '#BFDBFE' : '#1E40AF' }]}>
-                                    <Text style={styles.bold}>Jazz Night at Blue Note</Text> is happening nearby on Oct 14. Would you like to add it?
-                                </Text>
-                                <TouchableOpacity>
-                                    <Text style={[styles.addLink, { color: colors.primary }]}>+ Add to Itinerary</Text>
-                                </TouchableOpacity>
+                        {blueprint?.daily_breakdown?.[0]?.tag && (
+                            <View style={styles.aiInsightItem}>
+                                <Ionicons name="sparkles-outline" size={18} color={isDarkMode ? '#3B82F6' : '#2563EB'} style={styles.insightIcon} />
+                                <View style={{ flex: 1 }}>
+                                    <Text style={[styles.aiText, { color: isDarkMode ? '#BFDBFE' : '#1E40AF' }]}>
+                                        <Text style={styles.bold}>{blueprint.daily_breakdown[0].tag}</Text> is the theme for Day 1. Perfect for your interests!
+                                    </Text>
+                                </View>
                             </View>
-                        </View>
+                        )}
                     </View>
                 )}
 
                 {/* Itinerary Section */}
                 <View style={styles.sectionHeader}>
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>Itinerary</Text>
-                    <TouchableOpacity onPress={() => router.push(`/trip/${id}/itinerary`)}>
-                        <Text style={[styles.viewAll, { color: colors.primary }]}>View Full</Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        {/* Debug Indicator */}
+                        <View style={{ paddingHorizontal: 8, paddingVertical: 2, backgroundColor: statusColor + '20', borderRadius: 8, borderWidth: 1, borderColor: statusColor + '50' }}>
+                            <Text style={{ fontSize: 10, color: statusColor, fontWeight: '700' }}>
+                                {mockLocationState === 'at_event_1' ? 'GPS: Stopped' : mockLocationState === 'moving' ? 'GPS: Moving' : 'GPS: Arrived'}
+                            </Text>
+                        </View>
+                        <TouchableOpacity onPress={() => router.push(`/trip/${id}/itinerary`)}>
+                            <Text style={[styles.viewAll, { color: colors.primary }]}>View Full</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
+                {/* Main Current Activity Card */}
                 <TouchableOpacity
-                    style={[styles.upNextCard, { backgroundColor: colors.card }]}
+                    style={[styles.upNextCard, { backgroundColor: colors.card, borderColor: statusColor, borderWidth: 1 }]}
                     onPress={() => router.push(`/trip/${id}/itinerary`)}
+                    onLongPress={handleSimulateMovement}
                 >
-                    <View style={styles.upNextSidebar} />
+                    <View style={[styles.upNextSidebar, { backgroundColor: statusColor }]} />
                     <View style={styles.upNextInfo}>
                         <View style={styles.upNextHeader}>
-                            <View style={styles.upNextTag}>
-                                <Text style={styles.upNextTagText}>Up Next</Text>
-                            </View>
-                            <Text style={[styles.todayLabel, { color: colors.textSecondary }]}>Today, Oct 14</Text>
+                            <Text style={[styles.todayLabel, { color: colors.textSecondary }]}>{trip?.start_date}</Text>
+                            {statusLabel && (
+                                <View style={{ backgroundColor: statusColor + '20', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginLeft: 8 }}>
+                                    <Text style={{ color: statusColor, fontSize: 10, fontWeight: '700' }}>{statusLabel}</Text>
+                                </View>
+                            )}
                         </View>
-                        <Text style={[styles.activityName, { color: colors.text }]}>TeamLabs Planets</Text>
-                        <Text style={[styles.activityDesc, { color: colors.textSecondary }]}>Interactive Digital Art Museum</Text>
+                        <Text style={[styles.activityName, { color: colors.text }]}>{currentActivity?.title || 'First Stop'}</Text>
+                        <Text style={[styles.activityDesc, { color: colors.textSecondary }]} numberOfLines={1}>{currentActivity?.desc || 'Start your adventure'}</Text>
+
                         <View style={styles.timeRow}>
                             <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
-                            <Text style={[styles.timeText, { color: colors.textSecondary }]}>2:00 PM - 5:00 PM</Text>
+                            <Text style={[styles.timeText, { color: colors.textSecondary }]}>{currentActivity?.time || 'Morning'}</Text>
                         </View>
+
+                        {/* Smart Alert / Reschedule Action */}
+                        {showAlert && mockLocationState === 'at_event_1' && (
+                            <View style={[styles.alertCard, { backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.1)' : '#FEF2F2' }]}>
+                                <View style={styles.alertHeader}>
+                                    <View style={styles.alertBadge}>
+                                        <Ionicons name="notifications" size={14} color="#EF4444" />
+                                        <Text style={styles.alertBadgeText}>Smart Alert</Text>
+                                    </View>
+                                    <Text style={styles.alertSummary}>{alertMessage}</Text>
+                                </View>
+
+                                {event2 && (
+                                    <View style={styles.nextEventSection}>
+                                        <View style={styles.timelineConnector}>
+                                            <View style={[styles.connectorDot, { borderColor: isDarkMode ? '#EF4444' : '#FECACA' }]} />
+                                            <View style={[styles.connectorLine, { backgroundColor: isDarkMode ? '#EF4444' : '#FECACA' }]} />
+                                            <View style={[styles.connectorDot, { backgroundColor: '#EF4444', borderColor: '#EF4444' }]} />
+                                        </View>
+                                        <View style={styles.nextEventInfo}>
+                                            <Text style={[styles.nextEventLabel, { color: colors.textSecondary }]}>Next Activity</Text>
+                                            <Text style={[styles.nextEventTitle, { color: colors.text }]}>{event2.title}</Text>
+                                            <View style={styles.nextEventMeta}>
+                                                <Ionicons name="time" size={12} color="#EF4444" />
+                                                <Text style={styles.nextEventTime}>
+                                                    {event2.time} • {event2.transport?.duration || (event2 as any)?.transport_duration || "15 min"} {event2.transport?.mode?.toLowerCase() || 'travel'}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                    </View>
+                                )}
+
+                                <TouchableOpacity
+                                    style={[styles.rescheduleBtn, { backgroundColor: colors.primary }]}
+                                    onPress={(e) => {
+                                        e.stopPropagation();
+                                        handleReschedule();
+                                    }}
+                                >
+                                    <Ionicons name="calendar-outline" size={16} color="#FFF" />
+                                    <Text style={styles.rescheduleBtnText}>Push day by 30 mins</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
                     </View>
                     <Image
-                        source={{ uri: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?q=80&w=200' }}
+                        source={{ uri: currentActivity?.image || 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?q=80&w=200' }}
                         style={styles.activityImage}
                     />
                 </TouchableOpacity>
 
-                {/* Travel Squad */}
-                <View style={styles.sectionHeader}>
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Travel Squad</Text>
-                    <View style={styles.collabRow}>
-                        <Text style={[styles.collabLabel, { color: colors.textSecondary }]}>Collaborative</Text>
-                        <Switch
-                            value={isCollaborative}
-                            onValueChange={setIsCollaborative}
-                            trackColor={{ false: '#767577', true: colors.primary + '80' }}
-                            thumbColor={isCollaborative ? colors.primary : '#f4f3f4'}
-                            style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
-                        />
-                    </View>
-                </View>
-
-                <View style={styles.squadList}>
-                    <TouchableOpacity style={styles.inviteBtn} onPress={() => alert('Invite link copied to clipboard!')}>
-                        <View style={[styles.inviteIconBg, { borderColor: colors.divider }]}>
-                            <Ionicons name="add" size={24} color={colors.textSecondary} />
-                        </View>
-                        <Text style={[styles.squadName, { color: colors.textSecondary }]}>Invite</Text>
-                    </TouchableOpacity>
-                    {squad.map((member, idx) => (
-                        <View key={idx} style={styles.squadMember}>
-                            <View style={[styles.avatarBorder, { borderColor: colors.primary }]}>
-                                <Image source={{ uri: member.image }} style={styles.avatar} />
-                                {member.id !== 1 && (
-                                    <TouchableOpacity
-                                        style={styles.removeBadge}
-                                        onPress={() => handleRemoveMember(member.id)}
-                                    >
-                                        <Ionicons name="close" size={10} color="#FFF" />
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                            <Text style={[styles.squadName, { color: colors.text }]}>{member.name}</Text>
-                        </View>
-                    ))}
-                </View>
 
                 {/* Memory Vault */}
                 <View style={styles.sectionHeader}>
@@ -296,10 +633,10 @@ export default function TripDashboard() {
                             </TouchableOpacity>
                             <View style={styles.vaultInfo}>
                                 <View style={styles.vaultTitleRow}>
-                                    <Ionicons name={folder.icon as any} size={14} color="#FFF" />
-                                    <Text style={styles.vaultTitle}>{folder.name}</Text>
+                                    <Ionicons name={getIconName(folder.icon || 'folder-outline')} size={14} color="#FFF" />
+                                    <Text style={styles.vaultTitle} numberOfLines={1}>{folder.name || 'Untitled'}</Text>
                                 </View>
-                                <Text style={styles.vaultCount}>{folder.count} items</Text>
+                                <Text style={styles.vaultCount}>{folder.count || 0} items</Text>
                             </View>
                         </TouchableOpacity>
                     ))}
@@ -317,13 +654,6 @@ export default function TripDashboard() {
                 <View style={{ height: 100 }} />
             </ScrollView>
 
-            {/* Start Guide Button */}
-            <View style={[styles.footer, { backgroundColor: colors.background }]}>
-                <TouchableOpacity style={[styles.startGuideBtn, { backgroundColor: colors.primary }]}>
-                    <Ionicons name="navigate" size={20} color="#FFF" />
-                    <Text style={styles.startGuideText}>Start Guide</Text>
-                </TouchableOpacity>
-            </View>
             {/* Folder Modal */}
             <Modal
                 visible={modalVisible}
@@ -348,6 +678,11 @@ export default function TripDashboard() {
                             <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalBtn}>
                                 <Text style={[styles.modalBtnText, { color: colors.textSecondary }]}>Cancel</Text>
                             </TouchableOpacity>
+                            {editingIndex !== null && (
+                                <TouchableOpacity onPress={handleDeleteFolder} style={[styles.modalBtn, { backgroundColor: '#FEE2E2' }]}>
+                                    <Text style={[styles.modalBtnText, { color: '#EF4444' }]}>Delete</Text>
+                                </TouchableOpacity>
+                            )}
                             <TouchableOpacity onPress={handleSaveFolder} style={[styles.modalBtn, { backgroundColor: colors.primary }]}>
                                 <Text style={[styles.modalBtnText, { color: '#FFF' }]}>Save</Text>
                             </TouchableOpacity>
@@ -355,12 +690,165 @@ export default function TripDashboard() {
                     </View>
                 </View>
             </Modal>
-        </View >
+
+            {/* Improved Date Edit Modal (Bottom Sheet Style) */}
+            <Modal
+                visible={isDateModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsDateModalVisible(false)}
+            >
+                <TouchableOpacity
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
+                    onPress={() => setIsDateModalVisible(false)}
+                >
+                    <TouchableOpacity
+                        activeOpacity={1}
+                        style={[styles.bottomSheet, { backgroundColor: colors.card }]}
+                    >
+                        <View style={styles.sheetHandle} />
+                        <Text style={[styles.modalTitle, { color: colors.text, marginTop: 10 }]}>Edit Trip Dates</Text>
+
+                        <View style={styles.dateControlRow}>
+                            <View style={styles.dateDisplayBox}>
+                                <Text style={styles.dateLabel}>START DATE</Text>
+                                <Text style={[styles.dateValue, { color: colors.text }]}>{tempStartDate || trip?.start_date}</Text>
+                            </View>
+                            <Ionicons name="arrow-forward" size={24} color={colors.divider} />
+                            <View style={styles.dateDisplayBox}>
+                                <Text style={styles.dateLabel}>END DATE</Text>
+                                <Text style={[styles.dateValue, { color: colors.text }]}>{tempEndDate || trip?.end_date}</Text>
+                            </View>
+                        </View>
+
+                        <View style={[styles.dividerLine, { backgroundColor: colors.divider }]} />
+
+                        <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Quick Adjustments</Text>
+
+                        <View style={styles.adjustRow}>
+                            <TouchableOpacity
+                                style={[styles.adjustBtn, { borderColor: colors.divider }]}
+                                onPress={() => handleShiftDates(-1)}
+                            >
+                                <Ionicons name="chevron-back" size={20} color={colors.primary} />
+                                <Text style={[styles.adjustBtnText, { color: colors.text }]}>Shift -1 Day</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.adjustBtn, { borderColor: colors.divider }]}
+                                onPress={() => handleShiftDates(1)}
+                            >
+                                <Text style={[styles.adjustBtnText, { color: colors.text }]}>Shift +1 Day</Text>
+                                <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <TouchableOpacity
+                            onPress={handleUpdateDates}
+                            disabled={isSavingDates}
+                            style={[styles.confirmBtn, { backgroundColor: colors.primary }]}
+                        >
+                            {isSavingDates ? (
+                                <ActivityIndicator size="small" color="#FFF" />
+                            ) : (
+                                <Text style={styles.confirmBtnText}>Save Changes</Text>
+                            )}
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            </Modal>
+
+            {/* Share Trip Modal */}
+            <Modal
+                visible={isShareModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsShareModalVisible(false)}
+            >
+                <TouchableOpacity
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
+                    onPress={() => setIsShareModalVisible(false)}
+                >
+                    <TouchableOpacity
+                        activeOpacity={1}
+                        style={[styles.bottomSheet, { backgroundColor: colors.card }]}
+                    >
+                        <View style={styles.sheetHandle} />
+                        <Text style={[styles.modalTitle, { color: colors.text, marginTop: 10 }]}>Share Trip</Text>
+
+                        <View style={styles.shareOptions}>
+                            <TouchableOpacity
+                                style={[styles.shareOption, { backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC' }]}
+                                onPress={handleShareLink}
+                            >
+                                <View style={[styles.shareIconContainer, { backgroundColor: '#3B82F6' }]}>
+                                    <Ionicons name="link" size={24} color="#FFF" />
+                                </View>
+                                <Text style={[styles.shareOptionTitle, { color: colors.text }]}>Share Link</Text>
+                                <Text style={[styles.shareOptionDesc, { color: colors.textSecondary }]}>Send trip link to friends</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.shareOption, { backgroundColor: isDarkMode ? '#1E293B' : '#F8FAFC' }]}
+                                onPress={handleSharePDF}
+                            >
+                                <View style={[styles.shareIconContainer, { backgroundColor: '#EF4444' }]}>
+                                    <Ionicons name="document-text" size={24} color="#FFF" />
+                                </View>
+                                <Text style={[styles.shareOptionTitle, { color: colors.text }]}>Export PDF</Text>
+                                <Text style={[styles.shareOptionDesc, { color: colors.textSecondary }]}>Download as a portable guide</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <TouchableOpacity
+                            onPress={() => setIsShareModalVisible(false)}
+                            style={[styles.confirmBtn, { backgroundColor: colors.divider, marginTop: 10 }]}
+                        >
+                            <Text style={[styles.confirmBtnText, { color: colors.text }]}>Cancel</Text>
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            </Modal>
+            {connectError && (
+                <View style={styles.errorBanner}>
+                    <Ionicons name="cloud-offline" size={20} color="#EF4444" />
+                    <Text style={styles.errorText}>Server Offline. Check backend or ngrok.</Text>
+                </View>
+            )}
+
+            <Toast
+                visible={toast.visible}
+                message={toast.message}
+                type={toast.type}
+                onClose={() => setToast({ ...toast, visible: false })}
+            />
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
+    errorBanner: {
+        position: 'absolute',
+        top: 100,
+        left: 20,
+        right: 20,
+        backgroundColor: '#FEF2F2',
+        padding: 12,
+        borderRadius: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        borderWidth: 1,
+        borderColor: '#FECACA',
+        zIndex: 100,
+    },
+    errorText: {
+        color: '#B91C1C',
+        fontSize: 12,
+        fontWeight: '600',
+    },
     scrollContent: { paddingBottom: 20 },
     heroSection: {
         height: 300,
@@ -539,11 +1027,91 @@ const styles = StyleSheet.create({
         padding: 20,
     },
     modalContent: {
-        width: '100%',
-        borderRadius: 16,
+        width: '85%',
         padding: 24,
+        borderRadius: 24,
         alignItems: 'center',
-        elevation: 5,
+    },
+    bottomSheet: {
+        width: '100%',
+        padding: 24,
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        alignItems: 'center',
+        position: 'absolute',
+        bottom: 0,
+    },
+    sheetHandle: {
+        width: 40,
+        height: 6,
+        backgroundColor: 'rgba(0,0,0,0.1)',
+        borderRadius: 3,
+        marginBottom: 10,
+    },
+    dateControlRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+        marginTop: 20,
+    },
+    dateDisplayBox: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    dateLabel: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#999',
+        letterSpacing: 1,
+        marginBottom: 4,
+    },
+    dateValue: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    dividerLine: {
+        height: 1,
+        width: '100%',
+        marginVertical: 20,
+    },
+    sectionSubtitle: {
+        fontSize: 12,
+        fontWeight: '700',
+        alignSelf: 'flex-start',
+        letterSpacing: 1,
+        marginBottom: 15,
+    },
+    adjustRow: {
+        flexDirection: 'row',
+        gap: 12,
+        width: '100%',
+        marginBottom: 30,
+    },
+    adjustBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        gap: 8,
+    },
+    adjustBtnText: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    confirmBtn: {
+        width: '100%',
+        padding: 16,
+        borderRadius: 16,
+        alignItems: 'center',
+    },
+    confirmBtnText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: '700',
     },
     modalTitle: {
         fontSize: 18,
@@ -573,5 +1141,129 @@ const styles = StyleSheet.create({
     modalBtnText: {
         fontWeight: '600',
         fontSize: 16,
+    },
+    shareOptions: {
+        width: '100%',
+        gap: 12,
+        marginVertical: 20,
+    },
+    shareOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        borderRadius: 16,
+        gap: 16,
+    },
+    shareIconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    shareOptionTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        flex: 1,
+    },
+    shareOptionDesc: {
+        fontSize: 12,
+    },
+    // New Alert Styles
+    alertCard: {
+        marginTop: 16,
+        padding: 16,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.2)',
+    },
+    alertHeader: {
+        marginBottom: 12,
+    },
+    alertBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#EF4444',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 20,
+        gap: 4,
+        alignSelf: 'flex-start',
+        marginBottom: 8,
+    },
+    alertBadgeText: {
+        color: '#FFF',
+        fontSize: 10,
+        fontWeight: '800',
+        textTransform: 'uppercase',
+    },
+    alertSummary: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#B91C1C',
+    },
+    nextEventSection: {
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 16,
+    },
+    timelineConnector: {
+        alignItems: 'center',
+        width: 12,
+        paddingVertical: 4,
+    },
+    connectorDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        borderWidth: 2,
+    },
+    connectorLine: {
+        width: 2,
+        flex: 1,
+        marginVertical: 2,
+    },
+    nextEventInfo: {
+        flex: 1,
+    },
+    nextEventLabel: {
+        fontSize: 10,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginBottom: 2,
+    },
+    nextEventTitle: {
+        fontSize: 15,
+        fontWeight: '700',
+        marginBottom: 4,
+    },
+    nextEventMeta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    nextEventTime: {
+        fontSize: 12,
+        color: '#EF4444',
+        fontWeight: '600',
+    },
+    rescheduleBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+        borderRadius: 12,
+        gap: 8,
+        shadowColor: '#EF4444',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 4,
+    },
+    rescheduleBtnText: {
+        color: '#FFF',
+        fontSize: 13,
+        fontWeight: '700',
     },
 });

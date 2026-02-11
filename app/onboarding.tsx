@@ -6,7 +6,7 @@ import {
 } from '@/src/utils/responsive';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Image,
   NativeScrollEvent,
@@ -55,22 +55,28 @@ export default function OnboardingScreen() {
   //   checkSession();
   // }, []);
 
-  /* �🔁 AUTOPLAY */
+  const activeSlideRef = useRef(activeSlide);
+  useEffect(() => {
+    activeSlideRef.current = activeSlide;
+  }, [activeSlide]);
+
+  /* 🔁 AUTOPLAY */
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
 
     if (isAutoPlay) {
       interval = setInterval(() => {
-        moveToSlide(activeSlide + 1);
-      }, 2800);
+        const nextIndex = activeSlideRef.current + 1;
+        moveToSlide(nextIndex);
+      }, 2000);
     }
 
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [activeSlide, isAutoPlay]);
+  }, [isAutoPlay]); // Removed activeSlide dependency
 
-  const moveToSlide = (index: number) => {
+  const moveToSlide = useCallback((index: number) => {
     const safeIndex = (index + SLIDES.length) % SLIDES.length;
 
     scrollRef.current?.scrollTo({
@@ -80,7 +86,7 @@ export default function OnboardingScreen() {
 
     setActiveSlide(safeIndex);
     lastActiveSlide = safeIndex;
-  };
+  }, []);
 
   /* Restore slide */
   useEffect(() => {
@@ -134,6 +140,7 @@ export default function OnboardingScreen() {
             showsHorizontalScrollIndicator={false}
             scrollEnabled
             decelerationRate="fast"
+            pagingEnabled={true}
             onScrollBeginDrag={onScrollBeginDrag}
             onScrollEndDrag={onScrollEndDrag}
             scrollEventThrottle={16}

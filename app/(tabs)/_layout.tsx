@@ -16,11 +16,18 @@ export default function TabLayout() {
         headerShown: false,
         tabBarButton: HapticTab,
       }}>
+      {/* Hide index (Home) tab from navigation */}
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <Ionicons size={24} name="home" color={color} />,
+          href: null,
+        }}
+      />
+      {/* Hide screens folder from tabs */}
+      <Tabs.Screen
+        name="screens"
+        options={{
+          href: null,
         }}
       />
       <Tabs.Screen

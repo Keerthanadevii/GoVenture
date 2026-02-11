@@ -1,264 +1,459 @@
+import { CategoryChips } from '@/src/components/CategoryChips';
+import { MemoryCard } from '@/src/components/MemoryCard';
+import { MemoryViewerModal } from '@/src/components/MemoryViewerModal';
+import { SaveMemorySheet } from '@/src/components/SaveMemorySheet';
+import { ThemeColors, useTheme } from '@/src/context/ThemeContext';
+import api from '@/src/services/api';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import BottomSheet from '@gorhom/bottom-sheet';
+import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Image,
-    ScrollView,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    RefreshControl,
     StatusBar,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
-    View,
-    Dimensions,
-    Share,
+    View
 } from 'react-native';
-import { useTheme, ThemeColors } from '@/src/context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const { width } = Dimensions.get('window');
-const COLUMN_WIDTH = (width - 60) / 2;
 
 export default function MemoryVault() {
     const router = useRouter();
-    const { folderName } = useLocalSearchParams();
+    const { id, newItem, newCategory } = useLocalSearchParams();
     const { theme, isDarkMode } = useTheme();
     const colors = ThemeColors[theme];
     const insets = useSafeAreaInsets();
 
-    const handleShare = async () => {
-        try {
-            await Share.share({
-                message: `Check out my travel memories from Kyoto Spring 2024! 🌸\n\nI've captured ${memories.length} special moments, including:\n- ${memories[0].title}\n- ${memories[2].title}\n\nReliving the journey on GoVenture!`,
-            });
-        } catch (error: any) {
-            console.error(error.message);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [activeCategory, setActiveCategory] = useState('All');
+    const [memories, setMemories] = useState<any[]>([]);
+    const [folders, setFolders] = useState<any[]>([]);
+    const [trip, setTrip] = useState<any>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const [selectedMemory, setSelectedMemory] = useState<any>(null);
+    const [isViewerVisible, setIsViewerVisible] = useState(false);
+
+    const sheetRef = useRef<BottomSheet>(null);
+    const [galleryUris, setGalleryUris] = useState<string[]>([]);
+    const [isBatchSaving, setIsBatchSaving] = useState(false);
+
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const pageRef = useRef(1);
+    const hasMoreRef = useRef(false);
+    const isFetchingRef = useRef(false);
+
+    const abortControllerRef = useRef<AbortController | null>(null);
+    const isMounted = useRef(true);
+    const isFirstLoad = useRef(true);
+
+    const fetchMemories = useCallback(async (reset = false) => {
+        if (isFetchingRef.current && !reset) {
+            console.log('[Vault] Fetch already in progress, skipping load more.');
+            return;
         }
-    };
 
-    const [permission, requestPermission] = ImagePicker.useCameraPermissions();
+        console.log(`[Vault] fetchMemories(reset=${reset}) called. page=${pageRef.current}`);
 
-    // 1. Camera Handler (FAB)
-    const handleLaunchCamera = async () => {
-        if (!permission?.granted) {
-            const permissionResult = await requestPermission();
-            if (!permissionResult.granted) {
-                alert("Permission to access camera is required!");
+        // Cancel previous request if any
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        isFetchingRef.current = true;
+
+        if (reset) {
+            pageRef.current = 1;
+            // Only set isLoading if this is the very first load
+            if (isFirstLoad.current) {
+                setIsLoading(true);
+                isFirstLoad.current = false;
+            } else {
+                setIsRefreshing(true);
+            }
+        } else {
+            setIsLoadingMore(true);
+        }
+
+        try {
+            const res = await api.get(`/trips/${id}/memories`, {
+                params: { category: activeCategory, page: pageRef.current },
+                signal: controller.signal
+            });
+
+            // check if this request is still the latest one
+            if (abortControllerRef.current !== controller) return;
+
+            const newMemories = res.data?.memories || [];
+            if (reset) {
+                setMemories(newMemories);
+            } else {
+                setMemories(prev => [...prev, ...newMemories]);
+            }
+
+            setFolders(res.data?.folders || []);
+            setTrip(res.data?.trip || null);
+            hasMoreRef.current = res.data?.has_more || false;
+            pageRef.current += 1;
+
+            console.log(`[Vault] Fetch success. hasMore=${hasMoreRef.current}, next=${pageRef.current}`);
+        } catch (err: any) {
+            if (err.name === 'AbortError' || err.message === 'canceled') {
+                console.log('[Vault] Fetch aborted.');
                 return;
             }
-        }
+            console.error('Fetch memories error:', err);
+        } finally {
+            // Safety net: ensure loading states are reset after a timeout even if something stalls
+            const timeout = setTimeout(() => {
+                if (isMounted.current && abortControllerRef.current === controller) {
+                    setIsLoading(false);
+                    setIsRefreshing(false);
+                    setIsLoadingMore(false);
+                    isFetchingRef.current = false;
+                }
+            }, 10000);
 
-        let result = await ImagePicker.launchCameraAsync({
+            // Only reset fetching state if this request is still the current one
+            if (abortControllerRef.current === controller) {
+                isFetchingRef.current = false;
+                abortControllerRef.current = null;
+                if (isMounted.current) {
+                    clearTimeout(timeout);
+                    setIsLoading(false);
+                    setIsRefreshing(false);
+                    setIsLoadingMore(false);
+                }
+            }
+        }
+    }, [id, activeCategory]);
+
+    useFocusEffect(
+        useCallback(() => {
+            isMounted.current = true;
+            if (id) {
+                fetchMemories(true);
+            }
+            return () => {
+                console.log('[Vault] blur/unmount - cleaning up');
+                isMounted.current = false;
+                if (abortControllerRef.current) {
+                    abortControllerRef.current.abort();
+                    abortControllerRef.current = null;
+                }
+                isFetchingRef.current = false;
+                setIsLoading(false);
+                setIsRefreshing(false);
+                setIsLoadingMore(false);
+                setIsBatchSaving(false); // Reset saving status on blur to prevent sticking
+            };
+        }, [id, fetchMemories])
+    );
+
+    useEffect(() => {
+        if (newItem && newCategory) {
+            const tempItem = {
+                id: Date.now(),
+                type: 'image',
+                content: newItem as string,
+                category: newCategory as string,
+                is_favorite: false,
+                created_at: new Date().toISOString()
+            };
+
+            setMemories(prev => prev.some(m => m.content === tempItem.content) ? prev : [tempItem, ...prev]);
+
+            const timeout = setTimeout(() => {
+                router.setParams({ newItem: undefined, newCategory: undefined });
+            }, 300);
+
+            return () => clearTimeout(timeout);
+        }
+    }, [newItem, newCategory]);
+
+    const handlePickFromGallery = useCallback(async () => {
+        const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ['images'],
-            allowsEditing: true,
-            aspect: [4, 3],
-            quality: 1,
+            allowsMultipleSelection: true,
+            quality: 0.5,
         });
 
         if (!result.canceled) {
-            console.log(result.assets[0].uri);
-            alert('Photo captured! (Integration pending backend)');
+            setGalleryUris(result.assets.map(a => a.uri));
+            sheetRef.current?.expand();
         }
-    };
+    }, []);
 
-    // 2. Gallery Handler (New Collection)
-    const handleLaunchGallery = async () => {
-        let result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'],
-            allowsEditing: true,
-            aspect: [4, 3],
-            quality: 1,
+    const handleAddCollection = useCallback(() => {
+        Alert.alert("Add Memory", "Choose a source", [
+            { text: "Choose from Gallery", onPress: handlePickFromGallery },
+            { text: "Cancel", style: "cancel" }
+        ]);
+    }, [handlePickFromGallery]);
+
+    const handleSaveGalleryMemory = useCallback(async (category: string, caption: string) => {
+        if (galleryUris.length === 0) return;
+
+        if (isMounted.current) {
+            setIsBatchSaving(true);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
+
+        try {
+            const uploadPromises = galleryUris.map(async (uri) => {
+                const formData = new FormData();
+                formData.append('type', 'image');
+                formData.append('category', category);
+                formData.append('metadata', JSON.stringify({ caption }));
+
+                const filename = uri.split('/').pop() || 'photo.jpg';
+                const match = /\.(\w+)$/.exec(filename);
+                const type = match ? `image/${match[1]}` : `image/jpeg`;
+
+                formData.append('image', {
+                    uri: uri.startsWith('file://') ? uri : `file://${uri}`,
+                    name: filename,
+                    type,
+                } as any);
+
+                const response = await fetch(`${api.defaults.baseURL}/trips/${id}/memories`, {
+                    method: 'POST',
+                    body: formData,
+                    headers: { Authorization: api.defaults.headers.common['Authorization'] as string },
+                    signal: abortControllerRef.current?.signal,
+                });
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Upload failed');
+                return data.memory;
+            });
+
+            const savedMemories = await Promise.all(uploadPromises);
+            setMemories(prev => [...savedMemories, ...prev]);
+            setGalleryUris([]);
+            if (isMounted.current) {
+                sheetRef.current?.close();
+            }
+        } catch (e) {
+            if (isMounted.current) {
+                Alert.alert('Upload Error', 'Some images failed to upload.');
+            }
+        } finally {
+            if (isMounted.current) {
+                setIsBatchSaving(false);
+            }
+        }
+    }, [galleryUris, id]);
+
+    const handleToggleFavorite = useCallback(async (memoryId: number) => {
+        if (isMounted.current) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setMemories(prev => prev.map(m => m.id === memoryId ? { ...m, is_favorite: !m.is_favorite } : m));
+        }
+        try {
+            await api.post(`/trips/${id}/memories/${memoryId}/favorite`);
+        } catch (error) {
+            console.error('Toggle favorite error:', error);
+        }
+    }, [id]);
+
+    const handleDeleteMemory = useCallback((memoryId: number) => {
+        Alert.alert("Delete Memory", "Are you sure you want to delete this memory?", [
+            { text: "Cancel", style: "cancel" },
+            {
+                text: "Delete",
+                style: "destructive",
+                onPress: async () => {
+                    if (isMounted.current) {
+                        setMemories(prev => prev.filter(m => m.id !== memoryId));
+                    }
+                    try {
+                        await api.delete(`/trips/${id}/memories/${memoryId}`);
+                    } catch {
+                        if (isMounted.current) {
+                            Alert.alert("Error", "Failed to delete.");
+                        }
+                    }
+                }
+            }
+        ]);
+    }, [id]);
+
+    const handleMemoryPress = useCallback((item: any) => {
+        console.log('[Vault] handleMemoryPress called', item.id);
+        setSelectedMemory(item);
+        setIsViewerVisible(true);
+    }, []);
+
+    const defaultCategories = ['All', 'Favorites', 'Notes'];
+    const dynamicFolderNames = folders
+        .filter(f => !defaultCategories.includes(f.name))
+        .map(f => f.name);
+
+    const categoriesList = useMemo(() => [
+        ...defaultCategories,
+        ...dynamicFolderNames.map(name => name.charAt(0).toUpperCase() + name.slice(1))
+    ], [folders]);
+
+    const saveCategories = useMemo(
+        () => categoriesList.filter(c => c !== 'All' && c !== 'Favorites'),
+        [categoriesList]
+    );
+
+    const filteredMemories = useMemo(() => {
+        const lowerSearch = searchQuery.toLowerCase();
+        return memories.filter(item => {
+            if (!searchQuery) return true;
+            return (
+                item.category?.toLowerCase().includes(lowerSearch) ||
+                (item.type === 'note' && item.content?.toLowerCase().includes(lowerSearch)) ||
+                item.metadata?.caption?.toLowerCase().includes(lowerSearch)
+            );
         });
+    }, [memories, searchQuery]);
 
-        if (!result.canceled) {
-            console.log(result.assets[0].uri);
-            alert('Images selected from Gallery!');
-        }
-    };
+    const renderMemoryItem = useCallback(
+        ({ item }: { item: any }) => (
+            <MemoryCard
+                item={item}
+                colors={colors}
+                isDarkMode={isDarkMode}
+                onToggleFavorite={handleToggleFavorite}
+                onDelete={handleDeleteMemory}
+                onPress={handleMemoryPress}
+            />
+        ),
+        [colors, isDarkMode, handleToggleFavorite, handleDeleteMemory, handleMemoryPress]
+    );
 
-    // 3. Dynamic Categories
-    const baseCategories = ['All', 'Favorites', 'Food', 'Scenery'];
-    const [categories, setCategories] = useState(baseCategories);
-
-    // Initialize active category and update list if needed
-    const initialCategory = (folderName && String(folderName) !== 'undefined') ? String(folderName) : 'All';
-    const [activeCategory, setActiveCategory] = useState(initialCategory);
-
-    if (initialCategory !== 'All' && !baseCategories.includes(initialCategory) && !categories.includes(initialCategory)) {
-        setCategories([...baseCategories, initialCategory]);
+    if (isLoading && !isRefreshing) {
+        return (
+            <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+        );
     }
-
-    const memories = [
-        {
-            id: '1',
-            title: 'Sushi at Tsukiji Market',
-            location: 'TOKYO • DAY 1',
-            image: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?q=80&w=400',
-            icon: 'sparkles',
-            category: 'Food',
-            isFavorite: true,
-        },
-        {
-            id: '2',
-            type: 'note',
-            text: '"The matcha ice cream near the bamboo grove was incredible. Must try the sesame flavor next time!"',
-            date: 'April 12, 2:30 PM',
-            category: 'Food',
-        },
-        {
-            id: '3',
-            title: 'Kinkaku-ji',
-            image: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=400',
-            category: 'Scenery',
-            isFavorite: true,
-        },
-        {
-            id: '4',
-            title: 'Ninenzaka Slope',
-            image: 'https://images.unsplash.com/photo-1542051841857-5f90071e7989?q=80&w=400',
-            icon: 'sparkles',
-            category: 'Scenery',
-        },
-        {
-            id: '5',
-            title: 'Fushimi Inari Hike',
-            image: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=400',
-            icon: 'location',
-            category: 'Scenery',
-            isFavorite: true,
-        },
-        {
-            id: '6',
-            title: 'Arashiyama',
-            image: 'https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=400',
-            category: 'Scenery',
-        },
-    ];
-
-    const filteredMemories = memories.filter(item => {
-        if (activeCategory === 'All') return true;
-        if (activeCategory === 'Favorites') return item.isFavorite;
-        return item.category === activeCategory;
-    });
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
-            <StatusBar barStyle={theme === 'dark' ? 'light-content' : 'dark-content'} />
+            <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
 
             {/* Header */}
-            <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.divider, borderBottomWidth: 1 }]}>
-                <TouchableOpacity onPress={() => router.back()}>
+            <View style={[styles.header, { borderBottomColor: colors.divider }]}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                     <Ionicons name="arrow-back" size={24} color={colors.text} />
                 </TouchableOpacity>
                 <View style={styles.headerTitleContainer}>
-                    <Text style={[styles.headerTitle, { color: colors.text }]}>{folderName ? String(folderName) : 'Kyoto Spring 2024'}</Text>
-                    <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>Apr 10 - Apr 24</Text>
+                    <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                        {trip?.destination || 'Memory Vault'}
+                    </Text>
+                    <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+                        Capture your journey
+                    </Text>
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                    <TouchableOpacity onPress={handleShare} activeOpacity={0.7}>
-                        <Ionicons name="share-outline" size={24} color={colors.text} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => router.push('/profile')} activeOpacity={0.7}>
-                        <Ionicons name="person-circle" size={32} color={colors.primary} />
-                    </TouchableOpacity>
-                </View>
+                <View style={styles.profileBtn} />
             </View>
 
-            {/* Categories */}
-            <View style={[styles.categoriesContainer, { backgroundColor: colors.card }]}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesContent}>
-                    {categories.map((cat, idx) => (
-                        <TouchableOpacity
-                            key={idx}
-                            style={[styles.categoryBtn, { backgroundColor: activeCategory === cat ? colors.primary : colors.card, borderColor: activeCategory === cat ? colors.primary : colors.divider }]}
-                            onPress={() => setActiveCategory(cat)}
-                        >
-                            {cat === 'Favorites' && <Ionicons name="heart" size={16} color={activeCategory === cat ? '#FFF' : '#EC4899'} />}
-                            <Text style={[styles.categoryText, { color: activeCategory === cat ? '#FFF' : colors.textSecondary }]}>{cat}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </ScrollView>
+            {/* Search & Chips */}
+            <View style={[styles.filterSection, { backgroundColor: colors.card, borderBottomColor: colors.divider }]}>
+                <View style={[styles.searchBar, { backgroundColor: colors.background, borderColor: colors.divider }]}>
+                    <Ionicons name="search" size={18} color={colors.textSecondary} />
+                    <TextInput
+                        style={[styles.searchInput, { color: colors.text }]}
+                        placeholder="Search memories..."
+                        placeholderTextColor={colors.textSecondary}
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                    />
+                </View>
+
+                <CategoryChips
+                    categories={categoriesList}
+                    activeCategory={activeCategory}
+                    onCategoryChange={setActiveCategory}
+                    colors={colors}
+                />
             </View>
 
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-                <View style={styles.grid}>
-                    {/* Left Column */}
-                    <View style={styles.column}>
-                        {/* New Collection Card */}
-                        {/* New Collection Card - Gallery access */}
+            <FlatList
+                data={filteredMemories}
+                renderItem={renderMemoryItem}
+                keyExtractor={(item) => item.id.toString()}
+                numColumns={2}
+                contentContainerStyle={[styles.scrollContent, { paddingBottom: 100 }]}
+                columnWrapperStyle={{ gap: 20 }}
+                showsVerticalScrollIndicator={false}
+                onEndReached={() => {
+                    if (hasMoreRef.current && !isFetchingRef.current) {
+                        fetchMemories();
+                    }
+                }}
+                onEndReachedThreshold={0.5}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={() => fetchMemories(true)}
+                        tintColor={colors.primary}
+                    />
+                }
+                ListHeaderComponent={
+                    activeCategory !== 'Notes' ? (
                         <TouchableOpacity
-                            style={[styles.newCollectionCard, { backgroundColor: isDarkMode ? '#1E3A8A' : '#EFF6FF', borderColor: colors.primary, height: 180 }]}
-                            onPress={handleLaunchGallery}
+                            style={[styles.newCollectionCard, { backgroundColor: colors.card, borderColor: colors.primary, width: '100%' }]}
+                            onPress={handleAddCollection}
                         >
-                            <View style={[styles.folderIconBg, { backgroundColor: isDarkMode ? '#172554' : '#DBEAFE' }]}>
-                                <Ionicons name="images-outline" size={24} color={colors.primary} />
+                            <View style={[styles.newIconContainer, { backgroundColor: colors.primary + '20' }]}>
+                                <Ionicons name="add" size={32} color={colors.primary} />
                             </View>
-                            <Text style={[styles.newCollectionText, { color: colors.primary }]}>New Collection</Text>
-                            <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 4 }}>(From Gallery)</Text>
+                            <Text style={[styles.newText, { color: colors.text }]}>New Collection</Text>
+                            <Text style={[styles.newSubtext, { color: colors.textSecondary }]}>Add from gallery</Text>
                         </TouchableOpacity>
+                    ) : null
+                }
+                ListFooterComponent={
+                    isLoadingMore ? (
+                        <View style={{ paddingVertical: 20 }}>
+                            <ActivityIndicator size="small" color={colors.primary} />
+                        </View>
+                    ) : null
+                }
+                ListEmptyComponent={
+                    !isLoading && filteredMemories.length === 0 ? (
+                        <View style={styles.emptyState}>
+                            <Ionicons name="images-outline" size={64} color={colors.divider} />
+                            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No memories found in this category.</Text>
+                        </View>
+                    ) : null
+                }
+            />
 
-                        {/* Memory Items */}
-                        {filteredMemories.filter((_, i) => i % 2 === 0).map((item) => (
-                            item.type === 'note' ? (
-                                <View key={item.id} style={[styles.noteCard, { backgroundColor: isDarkMode ? '#452205' : '#FFFBEB' }]}>
-                                    <View style={styles.noteHeader}>
-                                        <Ionicons name="document-text" size={16} color="#F97316" />
-                                        <Text style={[styles.noteHeaderText, { color: isDarkMode ? '#FDE68A' : '#92400E' }]}>TRAVEL NOTE</Text>
-                                    </View>
-                                    <Text style={[styles.noteText, { color: colors.text }]}>{item.text}</Text>
-                                    <Text style={[styles.noteDate, { color: colors.textSecondary }]}>{item.date}</Text>
-                                </View>
-                            ) : (
-                                <TouchableOpacity key={item.id} style={styles.memoryCard}>
-                                    <Image source={{ uri: item.image }} style={[styles.memoryImage, { height: item.id === '1' ? 180 : 250 }]} />
-                                    <View style={styles.memoryOverlay}>
-                                        {item.icon && <Ionicons name={item.icon as any} size={16} color="#FFF" style={styles.memoryIcon} />}
-                                        <Text style={styles.memoryTitle}>{item.title}</Text>
-                                        {item.location && <Text style={styles.memoryLocation}>{item.location}</Text>}
-                                    </View>
-                                </TouchableOpacity>
-                            )
-                        ))}
-                    </View>
+            <MemoryViewerModal
+                visible={isViewerVisible}
+                item={selectedMemory}
+                onClose={() => setIsViewerVisible(false)}
+                onToggleFavorite={handleToggleFavorite}
+                colors={colors}
+            />
 
-                    {/* Right Column */}
-                    <View style={styles.column}>
-                        {filteredMemories.filter((_, i) => i % 2 !== 0).map((item) => (
-                            item.type === 'note' ? (
-                                <View key={item.id} style={styles.noteCard}>
-                                    <View style={styles.noteHeader}>
-                                        <Ionicons name="document-text" size={16} color="#F97316" />
-                                        <Text style={styles.noteHeaderText}>TRAVEL NOTE</Text>
-                                    </View>
-                                    <Text style={styles.noteText}>{item.text}</Text>
-                                    <Text style={styles.noteDate}>{item.date}</Text>
-                                </View>
-                            ) : (
-                                <TouchableOpacity key={item.id} style={styles.memoryCard}>
-                                    <Image source={{ uri: item.image }} style={[styles.memoryImage, { height: item.id === '4' ? 180 : 220 }]} />
-                                    <View style={styles.memoryOverlay}>
-                                        {item.icon && <Ionicons name={item.icon as any} size={16} color="#FFF" style={styles.memoryIcon} />}
-                                        <Text style={styles.memoryTitle}>{item.title}</Text>
-                                        {item.location && <Text style={styles.memoryLocation}>{item.location}</Text>}
-                                    </View>
-                                </TouchableOpacity>
-                            )
-                        ))}
-                    </View>
-                </View>
-
-                <View style={{ height: 100 }} />
-            </ScrollView>
-
-            {/* Floating Add Button */}
-            <TouchableOpacity
-                style={[styles.fab, { bottom: Math.max(insets.bottom, 20) + 10 }]}
-                activeOpacity={0.9}
-                onPress={handleLaunchCamera}
-            >
-                <Ionicons name="camera" size={24} color="#FFF" />
-                <Text style={styles.fabText}>Add Memory</Text>
-            </TouchableOpacity>
+            <SaveMemorySheet
+                sheetRef={sheetRef}
+                onSave={handleSaveGalleryMemory}
+                colors={colors}
+                categories={saveCategories}
+                count={galleryUris.length}
+                initialCategory={activeCategory !== 'All' && activeCategory !== 'Favorites' ? activeCategory : undefined}
+                isSaving={isBatchSaving}
+            />
         </View>
     );
 }
@@ -270,70 +465,60 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 20,
         paddingTop: 60,
-        paddingBottom: 20,
+        paddingBottom: 15,
+        borderBottomWidth: 1,
     },
+    backBtn: { width: 40 },
     headerTitleContainer: { flex: 1, alignItems: 'center' },
     headerTitle: { fontSize: 18, fontWeight: '700' },
     headerSubtitle: { fontSize: 12, marginTop: 2 },
-    categoriesContainer: { paddingVertical: 12 },
-    categoriesContent: { paddingHorizontal: 20, gap: 10 },
-    categoryBtn: {
+    profileBtn: { width: 40 },
+    filterSection: { borderBottomWidth: 1 },
+    searchBar: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
-        backgroundColor: '#FFF',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: '#E5E7EB',
-    },
-    categoryBtnActive: { backgroundColor: '#3B82F6', borderColor: '#3B82F6' },
-    categoryText: { fontSize: 14, fontWeight: '600' },
-    categoryTextActive: { color: '#FFF' },
-    content: { padding: 20 },
-    grid: { flexDirection: 'row', gap: 20 },
-    column: { flex: 1, gap: 20 },
-    newCollectionCard: {
+        marginHorizontal: 20,
+        marginTop: 15,
+        paddingHorizontal: 15,
+        height: 44,
         borderRadius: 12,
-        padding: 24,
+        borderWidth: 1,
+    },
+    searchInput: { flex: 1, marginLeft: 10, fontSize: 14 },
+    scrollContent: { paddingHorizontal: 20, paddingTop: 20 },
+    newCollectionCard: {
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 20,
+        borderWidth: 2,
+        borderStyle: 'dashed',
         alignItems: 'center',
         justifyContent: 'center',
-        borderStyle: 'dashed',
-        borderWidth: 1,
-        borderColor: '#3B82F6',
-        backgroundColor: '#EFF6FF',
-        height: 150,
+        height: 200,
     },
-    folderIconBg: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#DBEAFE', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-    newCollectionText: { fontSize: 13, color: '#3B82F6', fontWeight: '700' },
-    memoryCard: { borderRadius: 16, overflow: 'hidden', backgroundColor: '#000', elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 5 },
-    memoryImage: { width: '100%', opacity: 0.8 },
-    memoryOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 },
-    memoryIcon: { position: 'absolute', top: -140, right: 10 },
-    memoryTitle: { color: '#FFF', fontSize: 14, fontWeight: '700' },
-    memoryLocation: { color: 'rgba(255,255,255,0.8)', fontSize: 10, marginTop: 2, fontWeight: '600' },
-    noteCard: { backgroundColor: '#FFFBEB', borderRadius: 16, padding: 16, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5 },
-    noteHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
-    noteHeaderText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
-    noteText: { fontSize: 14, lineHeight: 22, fontWeight: '500' },
-    noteDate: { fontSize: 10, marginTop: 16 },
-    fab: {
-        position: 'absolute',
-        bottom: 30,
-        alignSelf: 'center',
-        backgroundColor: '#1D85E6',
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 24,
-        paddingVertical: 16,
+    newIconContainer: {
+        width: 60,
+        height: 60,
         borderRadius: 30,
-        gap: 10,
-        shadowColor: '#1D85E6',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 10,
-        elevation: 6,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 12,
     },
-    fabText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+    newText: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    newSubtext: {
+        fontSize: 12,
+        marginTop: 4,
+    },
+    emptyState: {
+        alignItems: 'center',
+        marginTop: 100,
+        gap: 15,
+    },
+    emptyText: {
+        fontSize: 16,
+        textAlign: 'center',
+    },
 });

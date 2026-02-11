@@ -1,7 +1,9 @@
 import { ThemeColors, useTheme } from '@/src/context/ThemeContext';
+import api from '@/src/services/api';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { Dimensions, FlatList, Image, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { Alert, Dimensions, FlatList, Image, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -12,24 +14,90 @@ interface Trip {
     image: any;
 }
 
-const TRIPS: Trip[] = [
-    { id: '1', destination: 'Tokyo, Japan', dates: 'Oct 15 - Oct 22', image: { uri: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?q=80&w=400&auto=format&fit=crop' } }
-];
 
 export default function TripsScreen() {
     const router = useRouter();
     const { theme, isDarkMode } = useTheme();
     const colors = ThemeColors[theme];
 
+    const [trips, setTrips] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+    const fetchTrips = async () => {
+        setIsLoading(true);
+        try {
+            const response = await api.get('/trips');
+            setTrips(response.data);
+        } catch (error) {
+            console.error('Failed to fetch trips:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useFocusEffect(
+        useCallback(() => {
+            fetchTrips();
+        }, [])
+    );
+
+    const handleDeleteTrip = (id: string, destination: string) => {
+        Alert.alert(
+            "Delete Trip",
+            `Are you sure you want to delete your trip to ${destination}?`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            await api.delete(`/trips/${id}`);
+                            setTrips(prev => prev.filter(t => t.id !== id));
+                        } catch (error) {
+                            console.error('Failed to delete trip:', error);
+                            Alert.alert("Error", "Could not delete trip. Please try again.");
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const toggleSort = () => {
+        const newOrder = sortOrder === 'desc' ? 'asc' : 'desc';
+        setSortOrder(newOrder);
+        const sorted = [...trips].sort((a, b) => {
+            const dateA = new Date(a.created_at).getTime();
+            const dateB = new Date(b.created_at).getTime();
+            return newOrder === 'desc' ? dateB - dateA : dateA - dateB;
+        });
+        setTrips(sorted);
+    };
+
     const renderTrip = ({ item }: { item: any }) => (
         <TouchableOpacity
             style={[styles.tripCard, { backgroundColor: colors.card }]}
             onPress={() => router.push(`/trip/${item.id}`)}
         >
-            <Image source={item.image} style={styles.tripImage} />
+            <Image
+                source={item.image_url ? { uri: item.image_url } : { uri: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?q=80&w=400&auto=format&fit=crop' }}
+                style={styles.tripImage}
+            />
             <View style={styles.tripInfo}>
-                <Text style={[styles.tripDestination, { color: colors.text }]}>{item.destination}</Text>
-                <Text style={[styles.tripDates, { color: colors.textSecondary }]}>{item.dates}</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.tripDestination, { color: colors.text }]}>{item.destination}</Text>
+                        <Text style={[styles.tripDates, { color: colors.textSecondary }]}>{item.start_date} - {item.end_date}</Text>
+                    </View>
+                    <TouchableOpacity
+                        style={styles.deleteBtn}
+                        onPress={() => handleDeleteTrip(item.id, item.destination)}
+                    >
+                        <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                    </TouchableOpacity>
+                </View>
             </View>
         </TouchableOpacity>
     );
@@ -41,8 +109,8 @@ export default function TripsScreen() {
             <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.divider }]}>
                 <Text style={[styles.headerTitle, { color: colors.text }]}>My Adventures</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                    <TouchableOpacity style={styles.profileButton}>
-                        <Ionicons name="filter-outline" size={24} color={colors.text} />
+                    <TouchableOpacity style={styles.profileButton} onPress={toggleSort}>
+                        <Ionicons name={sortOrder === 'desc' ? "arrow-down-outline" : "arrow-up-outline"} size={24} color={colors.text} />
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => router.push('/profile')}>
                         <Ionicons name="person-circle" size={36} color={colors.primary} />
@@ -50,13 +118,15 @@ export default function TripsScreen() {
                 </View>
             </View>
 
-            {TRIPS.length > 0 ? (
+            {trips.length > 0 ? (
                 <FlatList
-                    data={TRIPS}
+                    data={trips}
                     renderItem={renderTrip}
-                    keyExtractor={item => item.id}
+                    keyExtractor={item => item.id.toString()}
                     contentContainerStyle={styles.listContent}
                     showsVerticalScrollIndicator={false}
+                    onRefresh={fetchTrips}
+                    refreshing={isLoading}
                 />
             ) : (
                 <View style={styles.emptyState}>
@@ -109,6 +179,11 @@ const styles = StyleSheet.create({
     tripInfo: { padding: 16 },
     tripDestination: { fontSize: 18, fontWeight: '600' },
     tripDates: { fontSize: 14, marginTop: 4 },
+    deleteBtn: {
+        padding: 8,
+        backgroundColor: '#FEE2E2',
+        borderRadius: 8,
+    },
     emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
     emptyStateTitle: { fontSize: 20, fontWeight: '600', marginTop: 20 },
     emptyStateSubtitle: { fontSize: 15, textAlign: 'center', marginTop: 8, lineHeight: 22 },

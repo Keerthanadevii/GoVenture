@@ -19,7 +19,12 @@
       "edgeToEdgeEnabled": false,
       "predictiveBackGestureEnabled": false,
       "package": "com.anonymous.GoVenture",
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": true,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDw84Qp9YXjxqy2m6ECrC-Qa4_yiTyiQ6s"
+        }
+      }
     },
     "web": {
       "output": "static",

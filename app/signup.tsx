@@ -1,3 +1,4 @@
+import { Toast } from '@/src/components/Toast';
 import AuthService from '@/src/services/AuthService';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,6 +15,9 @@ export default function Signup() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as const });
 
   const handleSignup = async () => {
     if (!name || !email || !password || !confirm) {
@@ -35,13 +39,14 @@ export default function Signup() {
         password_confirmation: confirm,
       });
 
-      router.replace('/create-trip');
+      setToast({ visible: true, message: 'Account created! Welcome to GoVenture ✨', type: 'success' });
+      setTimeout(() => router.replace('/create-trip'), 1500);
     } catch (e: any) {
-      console.error('Signup Error:', e);
+      if (__DEV__) console.log('Signup Error:', e);
       let errorMessage = 'Something went wrong. Please try again.';
 
       if (e.response) {
-        console.error('Response Data:', e.response.data);
+        if (__DEV__) console.log('Response Data:', e.response.data);
 
         // Handle Laravel Validation Errors (422)
         if (e.response.status === 422 && e.response.data.errors) {
@@ -53,7 +58,7 @@ export default function Signup() {
           errorMessage = e.response.data.message || errorMessage;
         }
       } else if (e.request) {
-        errorMessage = 'Cannot reach server. Please check your internet connection.';
+        errorMessage = 'Unable to connect to server. Please check your internet connection.';
       }
 
       Alert.alert('Registration Failed', errorMessage);
@@ -78,7 +83,7 @@ export default function Signup() {
 
         {/* Header - Fixed at the top */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => router.replace('/onboarding')} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color="#000" />
           </TouchableOpacity>
         </View>
@@ -117,22 +122,47 @@ export default function Signup() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Password"
-                  placeholderTextColor="#9CA3AF"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Confirm Password"
-                  placeholderTextColor="#9CA3AF"
-                  value={confirm}
-                  onChangeText={setConfirm}
-                  secureTextEntry
-                />
+                <View style={styles.passwordWrapper}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                    placeholder="Password"
+                    placeholderTextColor="#9CA3AF"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIcon}
+                    onPress={() => setShowPassword(!showPassword)}
+                  >
+                    <Ionicons
+                      name={showPassword ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color="#9CA3AF"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.passwordWrapper}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                    placeholder="Confirm Password"
+                    placeholderTextColor="#9CA3AF"
+                    value={confirm}
+                    onChangeText={setConfirm}
+                    secureTextEntry={!showConfirm}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIcon}
+                    onPress={() => setShowConfirm(!showConfirm)}
+                  >
+                    <Ionicons
+                      name={showConfirm ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color="#9CA3AF"
+                    />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <TouchableOpacity
@@ -159,6 +189,12 @@ export default function Signup() {
           </ScrollView>
         </KeyboardAvoidingView>
       </ImageBackground>
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast({ ...toast, visible: false })}
+      />
     </View>
   );
 }
@@ -241,6 +277,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
+  },
+  passwordWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1F2937',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  eyeIcon: {
+    paddingHorizontal: 16,
   },
   primaryButton: {
     backgroundColor: '#3B82F6',

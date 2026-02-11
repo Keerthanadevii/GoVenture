@@ -1,3 +1,4 @@
+import { Toast } from '@/src/components/Toast';
 import AuthService from '@/src/services/AuthService';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -15,6 +16,8 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as const });
 
   useEffect(() => {
     if (params.email) {
@@ -53,9 +56,29 @@ export default function Login() {
         await AsyncStorage.removeItem('rememberedEmail');
       }
 
-      router.replace('/create-trip');
+      setToast({ visible: true, message: 'Welcome back! 👋', type: 'success' });
+      setTimeout(() => router.replace('/create-trip'), 1000);
     } catch (e: any) {
-      const errorMsg = e.response?.data?.message || 'Account doesn\'t exist. Please sign up.';
+      if (__DEV__) console.log('Login Error:', e);
+      let errorMsg = 'An unexpected error occurred. Please try again.';
+
+      if (e.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        if (e.response.status === 401) {
+          errorMsg = 'Invalid email or password.';
+        } else if (e.response.status === 422) {
+          errorMsg = e.response.data.message || 'Please check your input.';
+        } else if (e.response.status >= 500) {
+          errorMsg = 'Server error. Please try again later.';
+        } else {
+          errorMsg = e.response.data.message || errorMsg;
+        }
+      } else if (e.request) {
+        // The request was made but no response was received
+        errorMsg = 'Unable to connect to server. Please check your internet connection.';
+      }
+
       Alert.alert('Login Failed', errorMsg);
     } finally {
       setIsLoading(false);
@@ -78,7 +101,7 @@ export default function Login() {
 
         {/* Header - Fixed at the top */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => router.replace('/signup')} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color="#000" />
           </TouchableOpacity>
         </View>
@@ -110,14 +133,26 @@ export default function Login() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Password"
-                  placeholderTextColor="#9CA3AF"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                />
+                <View style={styles.passwordWrapper}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                    placeholder="Password"
+                    placeholderTextColor="#9CA3AF"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIcon}
+                    onPress={() => setShowPassword(!showPassword)}
+                  >
+                    <Ionicons
+                      name={showPassword ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color="#9CA3AF"
+                    />
+                  </TouchableOpacity>
+                </View>
 
                 <View style={styles.forgotContainer}>
                   <TouchableOpacity
@@ -162,6 +197,12 @@ export default function Login() {
           </ScrollView>
         </KeyboardAvoidingView>
       </ImageBackground>
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast({ ...toast, visible: false })}
+      />
     </View>
   );
 }
@@ -244,6 +285,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
+  },
+  passwordWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1F2937',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  eyeIcon: {
+    paddingHorizontal: 16,
   },
   forgotContainer: {
     flexDirection: 'row',
